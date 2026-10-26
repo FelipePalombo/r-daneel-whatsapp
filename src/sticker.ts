@@ -12,8 +12,12 @@ export async function createSticker(input: Buffer): Promise<Buffer> {
   if (!['jpeg', 'png', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) > 1) {
     throw new Error('Use uma imagem estática JPEG, PNG ou WebP.');
   }
+  // Usa as dimensões visuais após corrigir a orientação EXIF.
+  const swapped = (metadata.orientation ?? 1) >= 5;
+  const width = (swapped ? metadata.height : metadata.width) ?? 0;
+  const height = (swapped ? metadata.width : metadata.height) ?? 0;
   const pixels = await sharp(input, options).rotate().resize(512, 512, {
-    fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }
+    fit: height > width ? 'fill' : 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }
   }).png().toBuffer();
   for (const quality of [85, 70, 55, 40, 25, 10]) {
     const output = await sharp(pixels).webp({ quality, effort: 5 }).toBuffer();

@@ -61,3 +61,27 @@ test('aceita nono dígito ausente no identificador brasileiro e rejeita números
   assert.equal(stickerRequest(withJid('555198765432@lid'), phone), false);
   assert.equal(stickerRequest(withJid('155198765432@s.whatsapp.net'), '1551998765432'), false);
 });
+
+
+test('foto vertical ocupa o quadrado inteiro sem cortar as extremidades', async () => {
+  const input = await sharp({ create: { width: 100, height: 300, channels: 3, background: 'red' } })
+    .composite([{ input: await sharp({create:{width:100,height:100,channels:3,background:'blue'}}).png().toBuffer(), top:200,left:0 }])
+    .png().toBuffer();
+  const output = await createSticker(input);
+  const {data,info} = await sharp(output).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  const pixel = (x: number,y: number) => [...data.subarray((y*info.width+x)*4,(y*info.width+x)*4+4)];
+  assert.equal(info.width,512); assert.equal(info.height,512);
+  assert.equal(pixel(0,256)[3],255); assert.equal(pixel(511,256)[3],255);
+  assert.ok(pixel(256,10)[0]! > 200);
+  assert.ok(pixel(256,500)[2]! > 200);
+  assert.ok(output.length<=MAX_STICKER_BYTES);
+});
+
+test('decide achatamento pela orientação EXIF, não pelas dimensões armazenadas', async () => {
+  for (const [width,height,expectedAlpha] of [[300,100,255],[100,300,0]] as const) {
+    const input = await sharp({create:{width,height,channels:3,background:'red'}}).withMetadata({orientation:6}).jpeg().toBuffer();
+    const output = await createSticker(input);
+    const {data} = await sharp(output).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    assert.equal(data[3],expectedAlpha);
+  }
+});

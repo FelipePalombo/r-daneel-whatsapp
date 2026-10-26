@@ -22,7 +22,7 @@ npm run check
 npm run convert -- /caminho/foto.jpg /caminho/figurinha.webp
 ```
 
-O destino da conversão não pode existir (proteção contra sobrescrita). Aceita JPEG, PNG ou WebP estático até 10 MB e 25 milhões de pixels. Corrige orientação, preserva proporção/fundo, adiciona bordas transparentes e remove metadados. Não remove o fundo original, não gera imagens com IA e não processa vídeo/GIF.
+O destino da conversão não pode existir (proteção contra sobrescrita). Aceita JPEG, PNG ou WebP estático até 10 MB e 25 milhões de pixels. Corrige orientação e remove metadados. Fotos verticais são achatadas para preencher 512×512, sem cortar conteúdo; fotos horizontais preservam a proporção e recebem bordas transparentes. Não remove o fundo original, não gera imagens com IA e não processa vídeo/GIF.
 
 ## Vincular quando tiver o número
 

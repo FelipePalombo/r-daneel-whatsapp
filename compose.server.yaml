@@ -1,0 +1,33 @@
+# Servidor: imagem do bot construída localmente com docker build -t r-daneel-bot:local .
+services:
+  bot:
+    image: r-daneel-bot:local
+    init: true
+    restart: unless-stopped
+    environment:
+      AUTH_DIR: /app/data/auth
+      PAIRING_MODE: 'false'
+      COBALT_API_URL: http://cobalt:9000/
+    volumes:
+      - ./data:/app/data
+      - ./allowed-numbers.json:/app/allowed-numbers.json:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  cobalt:
+    image: ghcr.io/imputnet/cobalt@sha256:28540f81d2cffbd9d089c08438e39a7689a7cee7e9a5b0f60de93a22d19f5dbe
+    init: true
+    read_only: true
+    restart: unless-stopped
+    environment:
+      API_URL: http://cobalt:9000/
+      API_LISTEN_ADDRESS: 0.0.0.0
+      API_PORT: '9000'
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+# Nenhuma porta publicada: Cobalt só é acessível pela rede interna do Compose.

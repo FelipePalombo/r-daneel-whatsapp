@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_DIR: /app/data/auth
+      PAIRING_MODE: 'false'
+    volumes:
+      - session:/app/data
+      - ./allowed-numbers.json:/app/allowed-numbers.json:ro
+    # Não há API HTTP nem porta pública: a conexão é de saída.
+volumes:
+  session:

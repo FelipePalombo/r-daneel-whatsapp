@@ -172,3 +172,14 @@ restrições ou reputação do IP; não prometer acesso a todo conteúdo públic
 - Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.
 
 Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) preenchem todo o quadrado 512×512, redimensionando largura e altura independentemente, sem corte ou bordas adicionadas. Isso pode deformar as proporções. O vídeo enviado junto pelo comando combinado preserva o formato original.
+
+## GIF/WebP por link
+
+- `!gifigurinha <link>` / `!gf <link>` retornam somente a figurinha animada.
+- `src/gif-download.ts`: HTTPS público, validação DNS e IP fixado por conexão,
+  até três redirects validados, timeout total de 30 segundos e limite real de 10 MiB.
+- `src/gif-sticker.ts`: identificar GIF/WebP pelo conteúdo; recusar estáticos/AVIF/páginas.
+  Sharp normaliza quadros RGBA em temporários; FFmpeg reaproveita compressão e validação.
+- Até 300 quadros, 50 milhões de pixels decodificados e 8.294.400 pixels por quadro;
+  primeiros 10 segundos com aviso de recorte. Preservar transparência e preenchimento quadrado.
+- Manter autorização, fila e limpeza; nenhum download repetido por falha no envio.

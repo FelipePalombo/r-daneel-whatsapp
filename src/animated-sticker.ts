@@ -70,32 +70,7 @@ export async function createAnimatedSticker(input: Buffer): Promise<Buffer> {
     if (!video || !Number.isFinite(duration) || duration < 0.2) throw new AnimatedStickerError('Não consegui identificar uma animação válida. Envie vídeo ou GIF entre 0,2 e 10 segundos.');
     if (duration > MAX_ANIMATION_SECONDS) throw new AnimatedStickerError('Esse vídeo ou GIF passa de 10 segundos. Recorte um trecho de até 10 segundos e envie com a legenda !figurinha.');
     if (!(video.width > 0 && video.height > 0) || video.width * video.height > 8_294_400) throw new AnimatedStickerError('A resolução é muito alta. Envie um vídeo ou GIF com resolução de até 4K.');
-    // Primeiro preserva detalhes; só reduz a resolução interna quando necessário.
-    // O canvas final continua 512×512, mesmo nos últimos níveis de emergência.
-    const attempts = [
-      [12, 65, 512], [10, 40, 512], [8, 20, 512],
-      [6, 10, 320], [4, 5, 224], [3, 1, 128], [2, 0, 64],
-    ] as const;
-    for (const [targetFps, quality, size] of attempts) {
-      const fps = Math.max(targetFps, Math.ceil(2 / duration));
-      try {
-        await command('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '1',
-        '-filter_threads', '1', '-protocol_whitelist', 'file,pipe', ...(gif ? ['-ignore_loop', '1'] : []),
-        '-i', source, '-map', '0:v:0', '-an', '-sn', '-dn', '-t', '10', '-frames:v', String(fps * 10),
-        '-vf', `fps=${fps},scale=${size}:${size}:flags=area,format=rgba,scale=512:512:flags=neighbor,setsar=1`,
-        '-c:v', 'libwebp_anim', '-lossless', '0', '-quality', String(quality), '-compression_level', '3',
-        '-threads', '1', '-loop', '0', '-fs', '1000000', '-f', 'webp', output], 30_000);
-      } catch (error) {
-        if (!(error instanceof AnimatedStickerError)) throw error;
-        // Uma tentativa pesada pode exceder o tempo na VM; tentar a próxima, menor.
-        continue;
-      }
-      const result = await readFile(output);
-      if (result.length > MAX_ANIMATED_STICKER_BYTES) continue;
-      validateAnimatedSticker(result);
-      return result;
-    }
-    throw new AnimatedStickerError('Não consegui deixar essa animação abaixo de 500 KB. Tente um trecho mais curto ou com menos movimento.');
+    return await encodeAnimatedSource(source, duration, output, gif ? ['-ignore_loop', '1'] : []);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -117,4 +92,34 @@ export async function createLinkedVideoSticker(source: string): Promise<{ sticke
       '-pix_fmt', 'yuv420p', '-threads', '1', '-map_metadata', '-1', clip], 60_000);
     return { sticker: await createAnimatedSticker(await readFile(clip)), trimmed: duration > MAX_ANIMATION_SECONDS };
   } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+/** Entrada local normalizada; compartilhada pelos conversores de animação. */
+export async function encodeAnimatedSource(source: string, duration: number, output: string, inputOptions: string[] = []): Promise<Buffer> {
+  // Primeiro preserva detalhes; só reduz a resolução interna quando necessário.
+  // O canvas final continua 512×512, mesmo nos últimos níveis de emergência.
+  const attempts = [
+    [12, 65, 512], [10, 40, 512], [8, 20, 512],
+    [6, 10, 320], [4, 5, 224], [3, 1, 128], [2, 0, 64],
+  ] as const;
+  for (const [targetFps, quality, size] of attempts) {
+    const fps = Math.max(targetFps, Math.ceil(2 / duration));
+    try {
+      await command('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '1',
+      '-filter_threads', '1', '-protocol_whitelist', 'file,pipe', ...inputOptions,
+      '-i', source, '-map', '0:v:0', '-an', '-sn', '-dn', '-t', String(duration), '-frames:v', String(Math.ceil(fps * duration)),
+      '-vf', `fps=${fps},scale=${size}:${size}:flags=area,format=rgba,scale=512:512:flags=neighbor,setsar=1`,
+      '-c:v', 'libwebp_anim', '-lossless', '0', '-quality', String(quality), '-compression_level', '3',
+      '-threads', '1', '-loop', '0', '-fs', '1000000', '-f', 'webp', output], 30_000);
+    } catch (error) {
+      if (!(error instanceof AnimatedStickerError)) throw error;
+      // Uma tentativa pesada pode exceder o tempo na VM; tentar a próxima, menor.
+      continue;
+    }
+    const result = await readFile(output);
+    if (result.length > MAX_ANIMATED_STICKER_BYTES) continue;
+    validateAnimatedSticker(result);
+    return result;
+  }
+  throw new AnimatedStickerError('Não consegui deixar essa animação abaixo de 500 KB. Tente um trecho mais curto ou com menos movimento.');
 }

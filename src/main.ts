@@ -4,8 +4,9 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { createAnimatedSticker, AnimatedStickerError } from './animated-sticker.js';
 import { createSticker, MAX_INPUT_BYTES } from './sticker.js';
-import { readBounded, requestStatus, requestedVideo } from './request.js';
+import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand } from './request.js';
 import { sendVideoResponse } from './video-response.js';
+import { sendGifResponse } from './gif-sticker.js';
 import { loadAllowedNumbers } from './access.js';
 
 process.umask(0o077);
@@ -63,7 +64,7 @@ function connect() {
       }
       const status = requestStatus(message, allowedNumbers);
       if (!message.key.fromMe) console.log(`Recebimento: ${status}.`);
-      if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido'].includes(status)) continue;
+      if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido', 'gif por link aceito', 'comando de gif inválido'].includes(status)) continue;
       const now = Date.now();
       for (const [key, timestamp] of seen) if (now - timestamp > 600_000) seen.delete(key);
       const key = `${message.key.remoteJid}:${message.key.id}`;
@@ -76,11 +77,24 @@ function connect() {
         const jid = message.key.remoteJid!;
         const videoRequest = requestedVideo(message);
         const url = videoRequest?.url;
+        if (status === 'comando de gif inválido') {
+          await current.sendMessage(jid, { text: 'Use !gifigurinha <link> ou !gf <link HTTPS direto de GIF ou WebP animado>.' });
+          return;
+        }
         if (status === 'comando de vídeo inválido') {
           await current.sendMessage(jid, { text: 'Envie o link de uma publicação ou Reel do Instagram, ou de uma publicação do Twitter/X. Use !video ou !v <link> para vídeo; !vfigurinha ou !vf <link> para vídeo e figurinha.' });
           return;
         }
         try {
+          const gifUrl=parseGifCommand(messageText(message));
+          if (gifUrl) {
+            await sendGifResponse(gifUrl, {
+              sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated:true, width:512, height:512 }, { quoted:message }); },
+              text: async text => { await current.sendMessage(jid, { text }); },
+            });
+            console.log('Figurinha de link enviada.');
+            return;
+          }
           if (videoRequest) {
             await current.sendMessage(jid, { text: 'Vou buscar o vídeo. Pode levar até três minutos.' });
             await sendVideoResponse(videoRequest, {

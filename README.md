@@ -215,3 +215,18 @@ Referência: [requisitos oficiais do WhatsApp para figurinhas](https://github.co
 - Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.
 
 Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) preenchem todo o quadrado 512×512, redimensionando largura e altura independentemente, sem corte ou bordas adicionadas. Isso pode deformar as proporções. O vídeo enviado junto pelo comando combinado preserva o formato original.
+
+## Figurinha de GIF/WebP por link
+
+Use `!gifigurinha <link>` ou `!gf <link>` para baixar a animação original e receber
+somente a figurinha. Aceita GIF e WebP animado por link direto HTTPS, inclusive
+links de imagens do Discord; a extensão pode ser diferente do conteúdo real.
+Não extrai páginas do Tenor/Giphy e não aceita AVIF ou arquivo estático.
+
+Até 10 MiB de download, timeout total de 30 segundos e três redirecionamentos.
+Somente endereços públicos; DNS é validado e fixado por conexão, inclusive nos redirects.
+Até 300 quadros, 50 milhões de pixels decodificados e 8.294.400 pixels por quadro.
+Usa os primeiros 10 segundos, com aviso se houver recorte. Preserva transparência,
+preenche 512×512 sem bordas adicionadas e aplica a compressão progressiva até 500.000 bytes.
+Sharp normaliza os quadros em temporários e FFmpeg gera o WebP final; os arquivos
+são removidos em sucesso ou falha. Links isolados e comandos anteriores não mudam.

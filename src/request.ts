@@ -1,3 +1,4 @@
+import { directAnimationUrl } from './gif-download.js';
 import { videoUrl } from './video.js';
 import type { WAMessage } from '@whiskeysockets/baileys';
 
@@ -27,6 +28,8 @@ export function requestStatus(m: WAMessage, allowedPhone: string | readonly stri
     content = nested;
   }
   const text = content?.conversation ?? content?.extendedTextMessage?.text ?? '';
+  if (parseGifCommand(text)) return 'gif por link aceito';
+  if (/^!(?:gifigurinha|gf)(?:\s|$)/i.test(text.trim())) return 'comando de gif inválido';
   if (parseVideoCommand(text)) return 'vídeo aceito';
   if (/^!(?:video|v|vfigurinha|vf)(?:\s|$)/i.test(text.trim())) return 'comando de vídeo inválido';
   const animation = content?.videoMessage ??
@@ -66,12 +69,20 @@ export function parseVideoCommand(text: string): VideoCommand | undefined {
   return { url, sticker: !!match && ['vfigurinha', 'vf'].includes(match[1]!.toLowerCase()) };
 }
 
-export function requestedVideo(m: WAMessage): VideoCommand | undefined {
+export function messageText(m: WAMessage): string {
   let content = m.message;
   for (let i = 0; i < 5; i++) {
     const nested = content?.ephemeralMessage?.message ?? content?.documentWithCaptionMessage?.message;
     if (!nested) break;
     content = nested;
   }
-  return parseVideoCommand(content?.conversation ?? content?.extendedTextMessage?.text ?? '');
+  return content?.conversation ?? content?.extendedTextMessage?.text ?? '';
+}
+
+export function requestedVideo(m: WAMessage): VideoCommand | undefined {
+  return parseVideoCommand(messageText(m));
+}
+export function parseGifCommand(text:string): string | undefined {
+  const match=/^!(?:gifigurinha|gf)\s+(\S+)$/i.exec(text.trim());
+  return match ? directAnimationUrl(match[1]!)?.href : undefined;
 }

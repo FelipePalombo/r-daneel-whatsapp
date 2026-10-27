@@ -21,17 +21,25 @@ export function requestStatus(m: WAMessage, allowedPhone: string | readonly stri
   if (!(typeof allowedPhone === 'string' ? [allowedPhone] : allowedPhone).some(phone => authorizedPhoneJid(phoneJid, phone))) return 'remetente não autorizado';
   // Desembrulha somente mensagens temporárias; visualização única continua bloqueada.
   let content = m.message;
-  for (let i = 0; i < 5 && content?.ephemeralMessage; i++) content = content.ephemeralMessage.message;
+  for (let i = 0; i < 5; i++) {
+    const nested = content?.ephemeralMessage?.message ?? content?.documentWithCaptionMessage?.message;
+    if (!nested) break;
+    content = nested;
+  }
   const text = content?.conversation ?? content?.extendedTextMessage?.text ?? '';
-  if (videoUrl(text)) return 'vídeo aceito';
-  if (/^!video(?:\s|$)/i.test(text.trim())) return 'comando de vídeo inválido';
+  if (parseVideoCommand(text)) return 'vídeo aceito';
+  if (/^!(?:video|v|vfigurinha|vf)(?:\s|$)/i.test(text.trim())) return 'comando de vídeo inválido';
+  const animation = content?.videoMessage ??
+    (content?.documentMessage?.mimetype === 'image/gif' ? content.documentMessage : undefined) ??
+    (content?.imageMessage?.mimetype === 'image/gif' ? content.imageMessage : undefined);
+  if (animation) return isStickerCommand(animation.caption) ? 'animação aceita' : 'mídia sem legenda !figurinha';
   if (!content?.imageMessage) return 'aguardando foto com legenda !figurinha';
-  if (content.imageMessage.caption?.trim().toLowerCase() !== '!figurinha') return 'foto sem legenda !figurinha';
+  if (!isStickerCommand(content.imageMessage.caption)) return 'foto sem legenda !figurinha';
   return 'aceita';
 }
 
 export function stickerRequest(m: WAMessage, allowedPhone: string | readonly string[]): boolean {
-  return requestStatus(m, allowedPhone) === 'aceita';
+  return ['aceita', 'animação aceita'].includes(requestStatus(m, allowedPhone));
 }
 
 /** Limita leitura real, sem confiar apenas no tamanho anunciado pela mensagem. */
@@ -46,8 +54,24 @@ export async function readBounded(stream: AsyncIterable<Uint8Array>, limit: numb
   return Buffer.concat(chunks);
 }
 
-export function requestedVideo(m: WAMessage): string | undefined {
+export function isStickerCommand(text?: string | null): boolean {
+  return /^!(?:figurinha|f)$/i.test(text?.trim() ?? '');
+}
+
+export type VideoCommand = { url: string; sticker: boolean };
+export function parseVideoCommand(text: string): VideoCommand | undefined {
+  const match = /^!(video|v|vfigurinha|vf)\s+(.+)$/is.exec(text.trim());
+  const url = videoUrl(match ? match[2]! : text);
+  if (!url) return;
+  return { url, sticker: !!match && ['vfigurinha', 'vf'].includes(match[1]!.toLowerCase()) };
+}
+
+export function requestedVideo(m: WAMessage): VideoCommand | undefined {
   let content = m.message;
-  for (let i = 0; i < 5 && content?.ephemeralMessage; i++) content = content.ephemeralMessage.message;
-  return videoUrl(content?.conversation ?? content?.extendedTextMessage?.text ?? '');
+  for (let i = 0; i < 5; i++) {
+    const nested = content?.ephemeralMessage?.message ?? content?.documentWithCaptionMessage?.message;
+    if (!nested) break;
+    content = nested;
+  }
+  return parseVideoCommand(content?.conversation ?? content?.extendedTextMessage?.text ?? '');
 }

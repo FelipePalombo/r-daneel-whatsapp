@@ -22,7 +22,7 @@ npm run check
 npm run convert -- /caminho/foto.jpg /caminho/figurinha.webp
 ```
 
-O destino da conversão não pode existir (proteção contra sobrescrita). Aceita JPEG, PNG ou WebP estático até 10 MB e 25 milhões de pixels. Corrige orientação e remove metadados. Fotos verticais são achatadas para preencher 512×512, sem cortar conteúdo; fotos horizontais preservam a proporção e recebem bordas transparentes. Não remove o fundo original, não gera imagens com IA e não processa vídeo/GIF.
+O destino da conversão não pode existir (proteção contra sobrescrita). Aceita JPEG, PNG ou WebP estático até 10 MB e 25 milhões de pixels. Corrige orientação e remove metadados. Fotos verticais são achatadas para preencher 512×512, sem cortar conteúdo; fotos horizontais preservam a proporção e recebem bordas transparentes. Não remove o fundo original nem gera imagens com IA. Para vídeo/GIF, veja a seção de figurinhas animadas.
 
 ## Vincular quando tiver o número
 
@@ -176,3 +176,40 @@ na qual o Cobalt escuta. O fluxo Docker não foi validado nesta alteração.
 
 Referências: [API Cobalt](https://github.com/imputnet/cobalt/blob/main/docs/api.md),
 [execução local](https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md).
+
+## Figurinhas animadas
+
+Envie **vídeo ou GIF com a legenda `!figurinha`**. Os GIFs enviados pelo seletor
+normal do WhatsApp chegam como vídeo MP4 e também são aceitos. GIF enviado como
+arquivo com MIME `image/gif` é aceito com a mesma legenda.
+
+- Entrada: MP4/WebM ou GIF, até **10 MiB**, duração entre **0,2 e 10 segundos** e até 8.294.400 pixels por quadro.
+- Trechos acima de 10 segundos são recusados com orientação para recortar; não há corte silencioso.
+- Saída: WebP animado em loop, **512×512**, sem áudio e até **500.000 bytes**.
+- Valida duração real informada pelo ffprobe antes de converter e estrutura/tamanho/duração
+  de cada quadro do WebP final. Exige ao menos dois quadros e duração total de até 10 segundos.
+- Tenta sete níveis de compressão, preservando a melhor qualidade que couber: reduz qualidade,
+  taxa de quadros de 12 até 2 fps e resolução interna de 512 até 64 pixels. O canvas final
+  permanece 512×512 e o trecho não é cortado. Em vídeos muito curtos, mantém quadros suficientes
+  para a animação. Se ainda não couber, pede um trecho mais curto. Figurinhas não preservam áudio.
+- Usa uma conversão por vez, uma thread de ffmpeg e timeout de 30 segundos por tentativa.
+  Arquivos temporários são apagados também após falhas. A VM pequena pode demorar.
+- Fotos mantêm a conversão estática. Mídia de visualização única continua bloqueada.
+
+Os testes de animação exigem ffmpeg e ffprobe (`brew install ffmpeg` no Mac).
+A imagem Docker já contém os dois.
+
+Referência: [requisitos oficiais do WhatsApp para figurinhas](https://github.com/WhatsApp/stickers/blob/main/Android/README.md)
+(WebP 512×512, animação de até 10 segundos, até 500 KB, mínimo de 8 ms por quadro).
+
+## Comandos e atalhos
+
+- `!figurinha` / `!f`: legenda de foto, vídeo ou GIF para criar figurinha.
+- `!video <link>` / `!v <link>`: baixar vídeo público do Instagram ou Twitter/X.
+- `!vfigurinha <link>` / `!vf <link>`: baixar uma vez e enviar o vídeo completo seguido de figurinha animada.
+- Link isolado continua retornando somente o vídeo. Comandos aceitam maiúsculas e espaços nas extremidades.
+- No comando combinado, a figurinha usa os primeiros 10 segundos, com aviso quando houver recorte.
+  O vídeo completo mantém os limites de 16 MiB e 3 minutos. O trecho é preparado localmente,
+  sem áudio, e passa pela validação de entrada de 10 MiB e compressão progressiva até 500.000 bytes.
+- O envio direto com `!figurinha`/`!f` continua recusando animações acima de 10 segundos.
+- Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.

@@ -14,6 +14,25 @@ em TypeScript/Node.js, com soluções pequenas e fáceis de operar.
 - Ao terminar, informar alterações, validação e limitações. Distinguir teste local,
   teste no container e confirmação real pelo WhatsApp.
 
+## Contexto pessoal do projeto
+
+Ao retomar trabalho relevante no R. Daneel, consulte o índice pessoal definido nas
+instruções globais e a nota “Bot pessoal de figurinhas no WhatsApp”, além da
+documentação técnica pertinente. Se o índice não estiver disponível, informe a
+limitação sem adivinhar o caminho nem bloquear o trabalho técnico independente.
+
+Antes de encerrar uma entrega que altere funcionalidades, arquitetura, hospedagem,
+operação ou preferência explícita de Felipe, compare o resultado com essa nota.
+Havendo diferença durável, apresente destino, seção e texto concreto da atualização.
+Após aprovação específica, aplique pelo helper da skill personal-context, preserve
+estado anterior no histórico e releia. Solicite acesso somente para uma gravação
+autorizada; a falta de escrita não impede apresentar a proposta.
+
+Sem diferença útil, não gere nota nem aviso burocrático. Não repita proposta ignorada
+ou recusada; dados sensíveis exigem confirmação específica. Preferências do bot
+permanecem no contexto deste projeto, sem generalização para o perfil pessoal.
+O conteúdo da nota pessoal não deve ser incorporado ao repositório.
+
 ## Arquitetura
 
 - Node.js 22.12+, TypeScript, módulos ESM/NodeNext.
@@ -29,6 +48,7 @@ em TypeScript/Node.js, com soluções pequenas e fáceis de operar.
 | `src/access.ts` | Leitura e validação da lista privada de autorizados |
 | `src/request.ts` | Autorização, comandos e extração do pedido |
 | `src/sticker.ts` | Conversão de imagens |
+| `src/animated-sticker.ts` | Vídeo/GIF para WebP animado, validação e limites |
 | `src/video.ts` | Download, limites, validação e limpeza |
 | `src/cobalt.ts` | Cliente da API Cobalt |
 | `test/` | Testes com o runner nativo do Node |
@@ -43,7 +63,11 @@ em TypeScript/Node.js, com soluções pequenas e fáceis de operar.
 - Falha ao carregar a lista deve impedir a inicialização, nunca liberar acesso geral.
 - Preservar a resolução de identificadores LID e a equivalência restrita do nono
   dígito brasileiro. Não ampliar correspondência de números por suposição.
-- `!figurinha` deve ser a legenda da imagem.
+- `!figurinha` deve ser a legenda da foto, vídeo ou GIF.
+- Animações: entrada de até 10 MiB e 0,2–10 segundos; recusar duração maior sem cortar.
+  Saída WebP animada 512×512 de até 500.000 bytes, em loop, com ao menos dois quadros,
+  mínimo de 8 ms por quadro e duração total de até 10 segundos. Enviar com `isAnimated: true`.
+  Preservar validação antes/depois da conversão, threads limitadas, timeouts e limpeza.
 - Figurinhas: JPEG, PNG ou WebP estático, até 10 MiB e 25 milhões de pixels;
   saída WebP de 512×512 e até 100.000 bytes, sem metadados.
 - Corrigir orientação EXIF antes de decidir o formato. Fotos verticais preenchem
@@ -134,3 +158,15 @@ já foram incorporados ao GitHub; não pressupor que servidor e remoto estão si
 A persistência Baileys atual é baseada em arquivos e tem limitações. Não substituir
 por infraestrutura mais complexa sem necessidade concreta. Downloads podem falhar por
 restrições ou reputação do IP; não prometer acesso a todo conteúdo público.
+
+## Comandos e atalhos
+
+- `!figurinha` / `!f`: legenda de foto, vídeo ou GIF para criar figurinha.
+- `!video <link>` / `!v <link>`: baixar vídeo público do Instagram ou Twitter/X.
+- `!vfigurinha <link>` / `!vf <link>`: baixar uma vez e enviar o vídeo completo seguido de figurinha animada.
+- Link isolado continua retornando somente o vídeo. Comandos aceitam maiúsculas e espaços nas extremidades.
+- No comando combinado, a figurinha usa os primeiros 10 segundos, com aviso quando houver recorte.
+  O vídeo completo mantém os limites de 16 MiB e 3 minutos. O trecho é preparado localmente,
+  sem áudio, e passa pela validação de entrada de 10 MiB e compressão progressiva até 500.000 bytes.
+- O envio direto com `!figurinha`/`!f` continua recusando animações acima de 10 segundos.
+- Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.

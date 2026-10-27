@@ -170,3 +170,5 @@ restrições ou reputação do IP; não prometer acesso a todo conteúdo públic
   sem áudio, e passa pela validação de entrada de 10 MiB e compressão progressiva até 500.000 bytes.
 - O envio direto com `!figurinha`/`!f` continua recusando animações acima de 10 segundos.
 - Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.
+
+Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) preenchem todo o quadrado 512×512, redimensionando largura e altura independentemente, sem corte ou bordas adicionadas. Isso pode deformar as proporções. O vídeo enviado junto pelo comando combinado preserva o formato original.

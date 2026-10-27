@@ -82,7 +82,7 @@ export async function createAnimatedSticker(input: Buffer): Promise<Buffer> {
         await command('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '1',
         '-filter_threads', '1', '-protocol_whitelist', 'file,pipe', ...(gif ? ['-ignore_loop', '1'] : []),
         '-i', source, '-map', '0:v:0', '-an', '-sn', '-dn', '-t', '10', '-frames:v', String(fps * 10),
-        '-vf', `fps=${fps},scale=${size}:'if(gt(ih,iw),${size},max(2,trunc(ih*${size}/iw/2)*2))':flags=area,format=rgba,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,scale=512:512:flags=neighbor,setsar=1`,
+        '-vf', `fps=${fps},scale=${size}:${size}:flags=area,format=rgba,scale=512:512:flags=neighbor,setsar=1`,
         '-c:v', 'libwebp_anim', '-lossless', '0', '-quality', String(quality), '-compression_level', '3',
         '-threads', '1', '-loop', '0', '-fs', '1000000', '-f', 'webp', output], 30_000);
       } catch (error) {

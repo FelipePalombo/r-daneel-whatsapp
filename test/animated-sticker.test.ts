@@ -65,13 +65,15 @@ test('vídeo e GIF exigem legenda e autorização e não permitem visualização
 });
 
 
-test('animação horizontal preserva proporção e bordas transparentes', async () => {
-  await fixture(0.5,false,async input=> {
+test('animações horizontais e verticais preenchem o quadrado sem bordas adicionadas', async () => {
+  for (const size of ['240x80', '80x240']) await fixture(0.5,false,async input=> {
     const output=await createAnimatedSticker(input);
     const {data,info}=await sharp(output,{animated:true}).ensureAlpha().raw().toBuffer({resolveWithObject:true});
-    assert.equal(info.channels,4); assert.equal(data[3],0);
-    assert.equal(data[(256*512+256)*4+3],255);
-  }, '180x120');
+    assert.equal(info.width,512); assert.equal(info.pageHeight,512);
+    assert.equal(info.channels,4);
+    for (let i=3;i<data.length;i+=4) assert.equal(data[i],255, 'preenche todos os quadros sem bordas transparentes');
+    validateAnimatedSticker(output);
+  }, size);
 });
 
 

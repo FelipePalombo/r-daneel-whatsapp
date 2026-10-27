@@ -7,7 +7,13 @@ export function directAnimationUrl(value: string): URL | undefined {
   if (/\s/.test(value)) return;
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash) return url;
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return;
+    // O CDN 7TV oferece a mesma animação em WebP; não depende de decoder AVIF animado.
+    if (url.hostname === 'cdn.7tv.app' && /^\/emote\/[A-Za-z0-9]{24,26}\/[1-4]x\.avif$/.test(url.pathname)) {
+      url.pathname = url.pathname.replace(/\.avif$/, '.webp');
+      url.search = '';
+    }
+    return url;
   } catch { /* Entrada inválida. */ }
 }
 const blocked = new BlockList();

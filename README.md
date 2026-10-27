@@ -230,3 +230,5 @@ Usa os primeiros 10 segundos, com aviso se houver recorte. Preserva transparênc
 preenche 512×512 sem bordas adicionadas e aplica a compressão progressiva até 500.000 bytes.
 Sharp normaliza os quadros em temporários e FFmpeg gera o WebP final; os arquivos
 são removidos em sucesso ou falha. Links isolados e comandos anteriores não mudam.
+
+Links de emotes `https://cdn.7tv.app/emote/<id>/4x.avif` (também 1x–3x) são aceitos por `!gf`/`!gifigurinha`: o bot busca automaticamente a versão `.webp` do mesmo emote. AVIF de outros serviços continua fora do suporte.

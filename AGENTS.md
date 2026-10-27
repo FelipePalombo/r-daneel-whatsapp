@@ -183,3 +183,5 @@ Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) pree
 - Até 300 quadros, 50 milhões de pixels decodificados e 8.294.400 pixels por quadro;
   primeiros 10 segundos com aviso de recorte. Preservar transparência e preenchimento quadrado.
 - Manter autorização, fila e limpeza; nenhum download repetido por falha no envio.
+
+Links de emotes `https://cdn.7tv.app/emote/<id>/4x.avif` (também 1x–3x) são aceitos por `!gf`/`!gifigurinha`: o bot busca automaticamente a versão `.webp` do mesmo emote. AVIF de outros serviços continua fora do suporte.

@@ -91,3 +91,21 @@ test('envia somente figurinha, avisa recorte e não repete download após falha 
   },async()=>{downloads++;return Buffer.from('fixture');},async()=>({sticker:Buffer.from('result'),trimmed:true})));
   assert.equal(downloads,1);assert.deepEqual(events,['trim','sticker']);
 });
+
+test('links AVIF de emotes 7TV usam a versão WebP sem alterar outros hosts ou caminhos', async()=>{
+  const path='/emote/01JQ8HG9PWF9Z56JPFSPHG0J0E/4x';
+  const original=`https://cdn.7tv.app${path}.avif`;
+  const expected=`https://cdn.7tv.app${path}.webp`;
+  assert.equal(parseGifCommand(`!gf ${original}`),expected);
+  assert.equal(parseGifCommand(`!gifigurinha ${original}?tracking=1`),expected);
+  for(const host of ['example.com','cdn.7tv.app.evil.test']) {
+    const url=`https://${host}${path}.avif`;
+    assert.equal(directAnimationUrl(url)?.href,url);
+  }
+  assert.equal(directAnimationUrl('https://cdn.7tv.app/other/4x.avif')?.pathname,'/other/4x.avif');
+  const io:GifNetwork={resolve:async()=>[{address:'1.1.1.1',family:4}],get:async(url)=>{
+    assert.equal(url.href,expected);
+    return {status:200,body:(async function*(){yield Buffer.from('fixture');})(),close:()=>{}};
+  }};
+  await downloadAnimation(original,io);
+});

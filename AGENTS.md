@@ -185,3 +185,28 @@ Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) pree
 - Manter autorização, fila e limpeza; nenhum download repetido por falha no envio.
 
 Links de emotes `https://cdn.7tv.app/emote/<id>/4x.avif` (também 1x–3x) são aceitos por `!gf`/`!gifigurinha`: o bot busca automaticamente a versão `.webp` do mesmo emote. AVIF de outros serviços continua fora do suporte.
+
+`!help` mostra a lista de comandos e aliases, exemplos de uso e limites. Disponível somente para números autorizados em conversa privada; usa a mesma fila e proteção contra pedidos repetidos. O texto fica em `src/help.ts`.
+
+`!gf` e `!gifigurinha` também são aceitos como legenda de vídeo/GIF anexado no WhatsApp, incluindo GIFs do seletor GIPHY recebidos como MP4. Anexos mantêm os limites de 10 MiB e 0,2–10 segundos, sem recorte automático. O bot confirma o início antes de baixar/processar o anexo; pedidos por link também têm confirmação de início. Fotos comuns continuam usando `!f`/`!figurinha`.
+
+Comandos iniciados por `!` que não existem recebem orientação para `!help`; comandos conhecidos com formato incorreto recebem instrução de uso específica. Vale para texto e legendas, após autorização, com a mesma fila e deduplicação. Texto comum e mídia de visualização única continuam ignorados. Links válidos em legendas seguem o mesmo processamento dos links em texto.
+
+## Álbuns de fotos
+
+Selecione até 10 fotos e envie `!f`/`!figurinha` na primeira foto do álbum; a legenda
+pode chegar em qualquer membro. Associação explícita `MEDIA_ALBUM` vincula fotos
+à conversa autorizada. Nunca herdar comandos por proximidade de horário.
+O coletor espera os itens anunciados ou, sem contagem, 3 segundos de silêncio,
+com prazo máximo de 15 segundos. Guarda no máximo dez referências às fotos;
+rejeita visualização única e preserva autorização e deduplicação.
+O lote ocupa uma das três vagas globais desde a coleta até o fim do processamento;
+fotos são baixadas e convertidas uma por vez, com limites individuais existentes.
+Falha em uma imagem não impede as demais. Lotes maiores processam as primeiras
+dez, com aviso; mistos convertem só fotos. Lotes incompletos processam o recebido,
+com aviso. Álbuns sem comando são descartados sem conversão.
+Sem metadados de álbum, cada foto precisa de sua própria legenda; essas fotos
+não têm o intervalo de 2 segundos, mas continuam sujeitas à fila de três pedidos.
+Fila cheia gera aviso para aguardar e reenviar. `src/photo-batch.ts` trata a coleta
+limitada e o envio sequencial; `src/job-queue.ts` compartilha reservas entre lotes
+em coleta, tarefas aguardando e a tarefa em execução. Sessão continua única.

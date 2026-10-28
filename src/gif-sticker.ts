@@ -68,6 +68,7 @@ export async function createGifSticker(input: Buffer): Promise<{sticker:Buffer;t
 
 export async function sendGifResponse(url:string, send:{sticker:(data:Buffer)=>Promise<void>;text:(text:string)=>Promise<void>},
   download=downloadAnimation,convert=createGifSticker):Promise<void> {
+  await send.text('Vou baixar a animação e preparar a figurinha. Isso pode levar alguns minutos.');
   const result=await convert(await download(url));
   if(result.trimmed)await send.text('Para a figurinha, usei os primeiros 10 segundos da animação.');
   await send.sticker(result.sticker);

@@ -87,9 +87,9 @@ test('recorta 10 segundos e recusa estáticos, formatos inválidos e excesso de 
 test('envia somente figurinha, avisa recorte e não repete download após falha de envio',async()=>{
   let downloads=0;const events:string[]=[];
   await assert.rejects(sendGifResponse('https://example.com/a',{
-    text:async()=>{events.push('trim');},sticker:async()=>{events.push('sticker');throw new Error('envio');},
-  },async()=>{downloads++;return Buffer.from('fixture');},async()=>({sticker:Buffer.from('result'),trimmed:true})));
-  assert.equal(downloads,1);assert.deepEqual(events,['trim','sticker']);
+    text:async text=>{events.push(text.includes('primeiros')?'trim':'start');},sticker:async()=>{events.push('sticker');throw new Error('envio');},
+  },async()=>{downloads++;events.push('download');return Buffer.from('fixture');},async()=>({sticker:Buffer.from('result'),trimmed:true})));
+  assert.equal(downloads,1);assert.deepEqual(events,['start','download','trim','sticker']);
 });
 
 test('links AVIF de emotes 7TV usam a versão WebP sem alterar outros hosts ou caminhos', async()=>{

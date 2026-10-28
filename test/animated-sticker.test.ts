@@ -93,3 +93,26 @@ test('comprime animação longa com ruído reduzindo detalhes antes de desistir'
     assert.equal(info.width, 512); assert.equal(info.height, 512);
   } finally { await rm(dir, {recursive:true, force:true}); }
 });
+
+test('gf na legenda aceita GIF do seletor como MP4 e GIF como arquivo, sem liberar fotos ou visualização única',()=>{
+  const phone='5511999999999';
+  const key={id:'gif-caption',remoteJid:`${phone}@s.whatsapp.net`};
+  for(const caption of ['!gf',' !GF ','!gifigurinha']) {
+    for(const content of [
+      {videoMessage:{caption,gifPlayback:true,gifAttribution:1,mimetype:'video/mp4'}},
+      {videoMessage:{caption,mimetype:'video/mp4'}},
+      {imageMessage:{caption,mimetype:'image/gif'}},
+      {documentMessage:{caption,mimetype:'image/gif'}},
+      {documentWithCaptionMessage:{message:{documentMessage:{caption,mimetype:'image/gif'}}}},
+      {ephemeralMessage:{message:{videoMessage:{caption,gifPlayback:true}}}},
+    ]) {
+      assert.equal(requestStatus({key,message:content},phone),'animação aceita');
+      assert.equal(requestStatus({key,message:content},'5511888888888'),'remetente não autorizado');
+      assert.notEqual(requestStatus({key:{...key,remoteJid:'group@g.us'},message:content},phone),'animação aceita');
+      assert.notEqual(requestStatus({key,message:{viewOnceMessage:{message:content}}},phone),'animação aceita');
+    }
+  }
+  assert.equal(requestStatus({key,message:{conversation:'!gf'}},phone),'comando de gif inválido');
+  assert.notEqual(requestStatus({key,message:{imageMessage:{caption:'!gf',mimetype:'image/jpeg'}}},phone),'aceita');
+  assert.notEqual(requestStatus({key,message:{videoMessage:{caption:'!gfoo'}}},phone),'animação aceita');
+});

@@ -4,9 +4,12 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { createAnimatedSticker, AnimatedStickerError } from './animated-sticker.js';
 import { createSticker, MAX_INPUT_BYTES } from './sticker.js';
-import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand } from './request.js';
+import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply } from './request.js';
 import { sendVideoResponse } from './video-response.js';
+import { HELP_TEXT } from './help.js';
 import { sendGifResponse } from './gif-sticker.js';
+import { JobQueue } from './job-queue.js';
+import { PhotoAlbumCollector, sendPhotoBatch } from './photo-batch.js';
 import { loadAllowedNumbers } from './access.js';
 
 process.umask(0o077);
@@ -23,10 +26,31 @@ let stopping = false;
 let attempt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let socket: ReturnType<typeof makeWASocket>;
-let pending = 0;
-let queue = Promise.resolve();
+const jobs = new JobQueue(3, () => console.error('Falha no processamento.'));
 const seen = new Map<string, number>();
 let lastRequest = 0;
+
+const lastBusyNotice = new Map<string, number>();
+function reportBusy(message: import('@whiskeysockets/baileys').WAMessage) {
+  const jid = message.key.remoteJid!;
+  const now = Date.now();
+  if (now - (lastBusyNotice.get(jid) ?? 0) < 10_000) return;
+  lastBusyNotice.set(jid, now);
+  void socket.sendMessage(jid, { text: 'A fila está cheia. Aguarde os pedidos atuais terminarem e envie novamente.' }).catch(() => {});
+}
+const albums = new PhotoAlbumCollector(allowedNumbers, jobs, async batch => {
+  if (stopping) return;
+  const jid = batch.photos[0]!.key.remoteJid!;
+  await sendPhotoBatch(batch, {
+    text: async text => { await socket.sendMessage(jid, { text }); },
+    sticker: async (sticker, original) => { await socket.sendMessage(jid, { sticker, width: 512, height: 512 }, { quoted: original }); },
+  }, async original => {
+    const stream = await downloadMediaMessage(original, 'stream', { options: { signal: AbortSignal.timeout(30_000) } }, {
+      logger, reuploadRequest: socket.updateMediaMessage,
+    });
+    return createSticker(await readBounded(stream, MAX_INPUT_BYTES));
+  });
+}, reportBusy);
 
 function connect() {
   const current = makeWASocket({ auth: state, logger, syncFullHistory: false, markOnlineOnConnect: false });
@@ -64,25 +88,31 @@ function connect() {
       }
       const status = requestStatus(message, allowedNumbers);
       if (!message.key.fromMe) console.log(`Recebimento: ${status}.`);
-      if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido', 'gif por link aceito', 'comando de gif inválido'].includes(status)) continue;
       const now = Date.now();
       for (const [key, timestamp] of seen) if (now - timestamp > 600_000) seen.delete(key);
       const key = `${message.key.remoteJid}:${message.key.id}`;
-      if (seen.has(key) || now - lastRequest < 2000 || pending >= 3) {
-        console.log('Pedido ignorado: repetido, intervalo mínimo ou fila cheia.'); continue;
+      if (seen.has(key)) { console.log('Pedido ignorado: repetido.'); continue; }
+      if (albums.offer(message)) { seen.set(key, now); continue; }
+      if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido', 'gif por link aceito', 'comando de gif inválido', 'ajuda aceita', 'comando em formato inválido', 'comando desconhecido'].includes(status)) continue;
+      // Fotos avulsas com comando próprio podem chegar juntas sem o intervalo de 2s.
+      if (status !== 'aceita' && now - lastRequest < 2000) {
+        console.log('Pedido ignorado: intervalo mínimo.'); continue;
       }
-      seen.set(key, now); lastRequest = now; pending++;
-      queue = queue.then(async () => {
+      const reservation = jobs.reserve();
+      if (!reservation) { reportBusy(message); continue; }
+      seen.set(key, now);
+      if (status !== 'aceita') lastRequest = now;
+      reservation.submit(async () => {
         if (stopping) return;
         const jid = message.key.remoteJid!;
-        const videoRequest = requestedVideo(message);
-        const url = videoRequest?.url;
-        if (status === 'comando de gif inválido') {
-          await current.sendMessage(jid, { text: 'Use !gifigurinha <link> ou !gf <link HTTPS direto de GIF ou WebP animado>.' });
+        if (status === 'ajuda aceita') {
+          await current.sendMessage(jid, { text: HELP_TEXT }, { quoted: message });
           return;
         }
-        if (status === 'comando de vídeo inválido') {
-          await current.sendMessage(jid, { text: 'Envie o link de uma publicação ou Reel do Instagram, ou de uma publicação do Twitter/X. Use !video ou !v <link> para vídeo; !vfigurinha ou !vf <link> para vídeo e figurinha.' });
+        const videoRequest = requestedVideo(message);
+        const url = videoRequest?.url;
+        if (['comando de gif inválido', 'comando de vídeo inválido', 'comando em formato inválido', 'comando desconhecido'].includes(status)) {
+          await current.sendMessage(jid, { text: invalidCommandReply(message) }, { quoted: message });
           return;
         }
         try {
@@ -105,6 +135,7 @@ function connect() {
             console.log('Vídeo enviado.');
             return;
           }
+          if (status === 'animação aceita') await current.sendMessage(jid, { text: 'Vou preparar a figurinha animada. Isso pode levar alguns minutos.' });
           const stream = await downloadMediaMessage(message, 'stream', { options: { signal: AbortSignal.timeout(30_000) } }, {
             logger, reuploadRequest: current.updateMediaMessage
           });
@@ -117,7 +148,7 @@ function connect() {
           console.error(url ? 'Não foi possível concluir o vídeo.' : 'Não foi possível concluir uma figurinha.');
           await current.sendMessage(jid, { text: error instanceof AnimatedStickerError ? error.message : url ? 'Não consegui baixar esse vídeo. Precisa ser uma publicação pública com vídeo de até 3 minutos e 16 MB. O Instagram ou X também pode exigir login ou bloquear o download temporariamente.' : 'Não consegui preparar essa figurinha. Envie foto, vídeo ou GIF de até 10 MB com a legenda !figurinha. Vídeos e GIFs devem ter até 10 segundos.' }).catch(() => {});
         }
-      }).catch(() => { console.error('Falha no processamento.'); }).finally(() => { pending--; });
+      });
     }
   }
 }
@@ -125,8 +156,9 @@ function stop(code = 0) {
   if (stopping) return;
   stopping = true;
   clearTimeout(timer);
+  albums.close();
   socket?.end(undefined);
-  void queue.finally(() => saveCreds()).then(() => process.exit(code), () => process.exit(1));
+  void jobs.idle.finally(() => saveCreds()).then(() => process.exit(code), () => process.exit(1));
   setTimeout(() => process.exit(code), 5000).unref();
 }
 process.once('SIGINT', () => stop());

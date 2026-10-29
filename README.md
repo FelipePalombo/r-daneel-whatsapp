@@ -257,3 +257,15 @@ não têm o intervalo de 2 segundos, mas continuam sujeitas à fila de três ped
 Fila cheia gera aviso para aguardar e reenviar. `src/photo-batch.ts` trata a coleta
 limitada e o envio sequencial; `src/job-queue.ts` compartilha reservas entre lotes
 em coleta, tarefas aguardando e a tarefa em execução. Sessão continua única.
+
+## Limite temporário de acesso a vídeos
+
+Quando yt-dlp indicar explicitamente `rate-limit`/HTTP 429, o bot avisa, aguarda
+8 segundos e faz no máximo uma retentativa direta. O orçamento de 110 segundos
+é compartilhado pelas duas tentativas e pela pausa; não dobra o timeout.
+Cobalt continua como contingência após as tentativas diretas. Se a recuperação
+falhar, a mensagem identifica o bloqueio temporário e orienta tentar mais tarde.
+Login isolado, indisponibilidade, formato, tamanho e falhas de envio não geram
+essa retentativa. Aplicável a `!video`/`!v`, links isolados e `!vfigurinha`/`!vf`.
+Temporários são limpos em todas as saídas. Nenhum login/cookie é usado ou coletado.
+A retentativa não garante desbloqueio do Instagram ou Twitter/X.

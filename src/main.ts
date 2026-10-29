@@ -5,6 +5,7 @@ import qrcode from 'qrcode-terminal';
 import { createAnimatedSticker, AnimatedStickerError } from './animated-sticker.js';
 import { createSticker, MAX_INPUT_BYTES } from './sticker.js';
 import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply } from './request.js';
+import { videoFailureReply } from './video.js';
 import { sendVideoResponse } from './video-response.js';
 import { HELP_TEXT } from './help.js';
 import { sendGifResponse } from './gif-sticker.js';
@@ -146,7 +147,7 @@ function connect() {
         } catch (error) {
           if (url && error instanceof Error) console.error(error.message);
           console.error(url ? 'Não foi possível concluir o vídeo.' : 'Não foi possível concluir uma figurinha.');
-          await current.sendMessage(jid, { text: error instanceof AnimatedStickerError ? error.message : url ? 'Não consegui baixar esse vídeo. Precisa ser uma publicação pública com vídeo de até 3 minutos e 16 MB. O Instagram ou X também pode exigir login ou bloquear o download temporariamente.' : 'Não consegui preparar essa figurinha. Envie foto, vídeo ou GIF de até 10 MB com a legenda !figurinha. Vídeos e GIFs devem ter até 10 segundos.' }).catch(() => {});
+          await current.sendMessage(jid, { text: error instanceof AnimatedStickerError ? error.message : url ? videoFailureReply(error, url) : 'Não consegui preparar essa figurinha. Envie foto, vídeo ou GIF de até 10 MB com a legenda !figurinha. Vídeos e GIFs devem ter até 10 segundos.' }).catch(() => {});
         }
       });
     }

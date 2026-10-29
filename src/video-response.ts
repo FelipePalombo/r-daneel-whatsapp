@@ -20,5 +20,8 @@ export async function sendVideoResponse(request: VideoCommand, send: Sender,
     } catch {
       await send.text('O vídeo foi enviado, mas não consegui criar ou enviar a figurinha. Tente um trecho menor ou outro vídeo.');
     }
-  });
+  }, undefined, { onRetry: async () => {
+    const platform = request.url.includes('instagram.com/') ? 'O Instagram' : 'O Twitter/X';
+    await send.text(`${platform} limitou o acesso. Vou aguardar alguns segundos e tentar mais uma vez.`);
+  } });
 }

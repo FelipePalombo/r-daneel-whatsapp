@@ -222,3 +222,16 @@ Login isolado, indisponibilidade, formato, tamanho e falhas de envio não geram
 essa retentativa. Aplicável a `!video`/`!v`, links isolados e `!vfigurinha`/`!vf`.
 Temporários são limpos em todas as saídas. Nenhum login/cookie é usado ou coletado.
 A retentativa não garante desbloqueio do Instagram ou Twitter/X.
+
+
+## Contingência externa para Instagram
+
+Depois de yt-dlp e Cobalt, `src/snapinsta.ts` pode consultar o formulário público do
+Snapinsta e baixar uma única mídia. Habilitado por padrão; `SNAPINSTA_ENABLED=false`
+desativa. Avisar antes de iniciar; orçamento total adicional de 60 segundos, incluindo
+DNS, consultas e mídia. Compartilha somente a URL pública solicitada e usa cookies
+públicos temporários em memória; não usar login pessoal, CAPTCHA ou executar JS remoto.
+`src/public-http.ts` valida HTTPS, DNS e cada redirect, fixa o IP e limita os corpos.
+Preservar allowlist dos hosts observados, validação ffprobe, limites finais e limpeza.
+X continua sem provedor externo adicional validado. Não registrar tokens ou URLs
+assinadas, nem adicionar chamadas reais dos sites aos testes automáticos.

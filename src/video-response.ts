@@ -23,5 +23,7 @@ export async function sendVideoResponse(request: VideoCommand, send: Sender,
   }, undefined, { onRetry: async () => {
     const platform = request.url.includes('instagram.com/') ? 'O Instagram' : 'O Twitter/X';
     await send.text(`${platform} limitou o acesso. Vou aguardar alguns segundos e tentar mais uma vez.`);
+  }, onExternalFallback: async () => {
+    await send.text('O download principal falhou. Vou tentar um serviço alternativo; pode levar até mais um minuto.');
   } });
 }

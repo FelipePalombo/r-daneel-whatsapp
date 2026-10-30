@@ -1,4 +1,5 @@
 import { downloadCobalt } from './cobalt.js';
+import { downloadSnapinsta } from './snapinsta.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
@@ -50,6 +51,8 @@ export function videoUrl(text: string): string | undefined {
 export type VideoRunner = (args: string[], directory: string, timeoutMs?: number) => Promise<void>;
 export type VideoRetryOptions = {
   onRetry?: () => Promise<void>;
+  onExternalFallback?: () => Promise<void>;
+  externalFallback?: typeof downloadSnapinsta;
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
   fallback?: typeof downloadCobalt;
@@ -110,14 +113,23 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
       }
     } catch (error) {
       const endpoint = process.env.COBALT_API_URL;
-      if (!endpoint) throw rateLimit ?? error;
-      console.log('Download direto falhou; tentando Cobalt local.');
-      await rm(join(directory, 'video.mp4'), { force: true });
-      try { await (options.fallback ?? downloadCobalt)(canonical, directory, endpoint); }
-      catch {
-        if (error instanceof VideoRateLimitError || rateLimit) throw error instanceof VideoRateLimitError ? error : rateLimit;
-        throw new Error(`${error instanceof Error ? error.message : 'Download direto falhou.'} Cobalt também não conseguiu baixar o vídeo.`);
+      let recovered = false;
+      if (endpoint) {
+        console.log('Download direto falhou; tentando Cobalt local.');
+        await rm(join(directory, 'video.mp4'), { force: true });
+        try { await (options.fallback ?? downloadCobalt)(canonical, directory, endpoint); recovered = true; }
+        catch { /* A próxima contingência pode recuperar a falha de extração. */ }
       }
+      const external = options.externalFallback ?? (run === download ? downloadSnapinsta : undefined);
+      if (!recovered && canonical.startsWith('https://www.instagram.com/') && process.env.SNAPINSTA_ENABLED !== 'false' && external) {
+        // Aviso antes da consulta; o minuto extra abrange formulário, resposta e mídia.
+        await options.onExternalFallback?.().catch(() => {});
+        await Promise.all(['video.mp4', 'video.mp4.part', 'video.mp4.ytdl'].map(name => rm(join(directory, name), { force: true })));
+        console.log('Download principal falhou; tentando serviço externo para Instagram.');
+        try { await external(canonical, directory); recovered = true; }
+        catch { /* Não registrar resposta, cookies ou URL assinada do serviço externo. */ }
+      }
+      if (!recovered) throw rateLimit ?? error;
     }
     const path = join(directory, 'video.mp4');
     const file = await stat(path);

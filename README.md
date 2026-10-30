@@ -112,7 +112,7 @@ Envie **somente o link da publicação**, ou `!video https://x.com/usuario/statu
 Também aceita links do Instagram nos formatos `/reel/codigo/`, `/reels/codigo/`, `/p/codigo/` e `/tv/codigo/`, sozinhos ou com `!video`. Não aceita Stories ou links de perfil.
 O bot devolve o primeiro item se ele for vídeo, como MP4, com o link de origem na legenda. Em carrosséis que começam com foto, o download pode falhar.
 Somente publicações públicas acessíveis sem login, até 3 minutos e 16 MiB.
-Não acessa contas privadas, não usa cookies e não baixa transmissões ao vivo.
+Não acessa contas privadas, não usa cookies pessoais e não baixa transmissões ao vivo.
 Uma publicação sem vídeo, que exija login ou bloqueada pelo Instagram/X recebe mensagem de falha.
 A tentativa com yt-dlp tem timeout de 110 segundos e usa a mesma fila das figurinhas.
 Arquivos temporários são removidos após o envio ou falha; downloads em andamento
@@ -269,3 +269,40 @@ Login isolado, indisponibilidade, formato, tamanho e falhas de envio não geram
 essa retentativa. Aplicável a `!video`/`!v`, links isolados e `!vfigurinha`/`!vf`.
 Temporários são limpos em todas as saídas. Nenhum login/cookie é usado ou coletado.
 A retentativa não garante desbloqueio do Instagram ou Twitter/X.
+
+
+## Contingência externa para Instagram
+
+Após falha de yt-dlp e do Cobalt configurado, o bot tenta o Snapinsta para publicações
+públicas do Instagram. Vale para links isolados, `!v`/`!video` e `!vf`/`!vfigurinha`.
+Antes da consulta, avisa: “O download principal falhou. Vou tentar um serviço
+alternativo; pode levar até mais um minuto.” O orçamento adicional é de 60 segundos
+para formulário, resposta e transferência juntos. A fila permanece serial.
+
+Habilitado por padrão; `SNAPINSTA_ENABLED=false` no ambiente desativa essa tentativa.
+Para Docker Compose, configure a variável no ambiente do serviço `bot`.
+**A URL pública solicitada é enviada ao Snapinsta.** O bot consulta o formulário
+público e usa somente seus cookies temporários em memória. Não usa contas pessoais,
+não resolve CAPTCHA e não executa JavaScript recebido: decodifica apenas o envelope
+conhecido e extrai um link de mídia. Uma mudança no site pode interromper a integração.
+
+O download valida HTTPS, DNS público com IP fixado e até três redirecionamentos por
+requisição; permite somente o site e o CDN observado. Respostas textuais têm limite
+de 1 MiB; o vídeo mantém 16 MiB e 180 segundos, com ffprobe antes do envio. Falhas de
+envio não repetem o download. Cookies, tokens e links assinados não entram nos logs.
+
+Pesquisa em 30/10/2026: [Snapinsta](https://snapinsta.ai/) usa `POST /action2.php`
+com campos da página inicial. A integração baixou e validou o Reel de referência
+como MP4 com áudio e vídeo, 11,12 segundos e 1.353.556 bytes no Mac e em container
+isolado na Oracle, sem iniciar outra sessão WhatsApp. A suíte local passou com 66 testes.
+
+Também foram examinados [FastDL](https://fastdl.app/) (`api-wh.fastdl.app/api/convert`,
+corpo assinado), [iGram](https://igram.world/) (`/api/convert`, assinatura),
+[TwitterVideoDownloader](https://twittervideodownloader.com/) (`/download`),
+[SSSTwitter](https://ssstwitter.com/) (`POST /`) e [TWDown](https://twdown.net/)
+(`/download.php`). Não foram habilitados: os dois primeiros exigem um fluxo assinado
+não validado; nos testes da Oracle, o TwitterVideoDownloader respondeu 403 e os outros
+dois não retornaram mídia. Twitter/X continua com yt-dlp e Cobalt.
+
+Código: `src/snapinsta.ts` e `src/public-http.ts`; testes determinísticos usam respostas
+sintéticas sem tokens reais. As chamadas externas reais são verificações manuais.

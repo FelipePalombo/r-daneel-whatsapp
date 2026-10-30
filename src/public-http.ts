@@ -3,6 +3,8 @@ import { request } from 'node:https';
 import { isIP } from 'node:net';
 import { publicAddress, type Address } from './gif-download.js';
 
+export class HttpBodyTooLargeError extends Error {}
+
 export type HttpReply = { status: number; headers: Record<string, string | string[] | undefined>; body: AsyncIterable<Uint8Array>; close: () => void };
 export type PublicHttp = {
   resolve: (host: string) => Promise<Address[]>;
@@ -44,11 +46,11 @@ export async function publicHttp(value: string, options: {
           url = next; continue;
         }
         if (reply.status !== 200) throw new Error('Serviço externo indisponível.');
-        if (Number(reply.headers['content-length']) > options.limit) throw new Error('Resposta externa acima do limite.');
+        if (Number(reply.headers['content-length']) > options.limit) throw new HttpBodyTooLargeError('Resposta externa acima do limite.');
         const chunks: Buffer[] = []; let size = 0;
         for await (const chunk of reply.body) {
           options.signal.throwIfAborted(); size += chunk.length;
-          if (size > options.limit) throw new Error('Resposta externa acima do limite.');
+          if (size > options.limit) throw new HttpBodyTooLargeError('Resposta externa acima do limite.');
           chunks.push(Buffer.from(chunk));
         }
         if (!size) throw new Error('Resposta externa vazia.');

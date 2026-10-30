@@ -108,7 +108,7 @@ test('vídeo: Cobalt antes do externo; aviso único, limpeza e envio sem repeti�
   } finally { if (previous === undefined) delete process.env.COBALT_API_URL; else process.env.COBALT_API_URL = previous; }
 });
 
-test('vídeo: contingência externa não roda para X nem quando desativada; preserva rate limit', async () => {
+test('Snapinsta não roda para X nem quando desativado; preserva rate limit', async () => {
   const previous = process.env.SNAPINSTA_ENABLED; const previousCobalt = process.env.COBALT_API_URL; delete process.env.COBALT_API_URL;
   try {
     for (const [target, enabled] of [['https://x.com/i/web/status/123', 'true'], [url, 'false']]) {

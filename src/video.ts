@@ -1,5 +1,6 @@
 import { downloadCobalt } from './cobalt.js';
 import { downloadSnapinsta } from './snapinsta.js';
+import { downloadTwitter } from './twitter-download.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
@@ -53,6 +54,7 @@ export type VideoRetryOptions = {
   onRetry?: () => Promise<void>;
   onExternalFallback?: () => Promise<void>;
   externalFallback?: typeof downloadSnapinsta;
+  twitterFallback?: typeof downloadTwitter;
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
   fallback?: typeof downloadCobalt;
@@ -91,7 +93,8 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
       '--no-progress', '--no-warnings', '--socket-timeout', '15', '--retries', '1',
       '--match-filter', 'duration <=? 180 & !is_live',
       '--max-filesize', String(MAX_VIDEO_BYTES),
-      '-f', 'best[ext=mp4][protocol=https][filesize<=?16777216]/best[ext=mp4][protocol=http][filesize<=?16777216]',
+      // Estimativa evita escolher HD sabidamente grande quando filesize não é informado.
+      '-f', 'best[ext=mp4][protocol=https][filesize<=?16777216][filesize_approx<=?16777216]/best[ext=mp4][protocol=http][filesize<=?16777216][filesize_approx<=?16777216]',
       '-o', 'video.mp4', '--', canonical,
     ], directory, remaining);
     const downloaded = await stat(join(directory, 'video.mp4')).catch(() => undefined);
@@ -120,14 +123,18 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
         try { await (options.fallback ?? downloadCobalt)(canonical, directory, endpoint); recovered = true; }
         catch { /* A próxima contingência pode recuperar a falha de extração. */ }
       }
-      const external = options.externalFallback ?? (run === download ? downloadSnapinsta : undefined);
-      if (!recovered && canonical.startsWith('https://www.instagram.com/') && process.env.SNAPINSTA_ENABLED !== 'false' && external) {
-        // Aviso antes da consulta; o minuto extra abrange formulário, resposta e mídia.
+      const instagram = canonical.startsWith('https://www.instagram.com/');
+      const enabled = instagram ? process.env.SNAPINSTA_ENABLED !== 'false'
+        : process.env.FXTWITTER_ENABLED !== 'false' || process.env.VXTWITTER_ENABLED !== 'false';
+      const external = instagram
+        ? options.externalFallback ?? (run === download ? downloadSnapinsta : undefined)
+        : options.twitterFallback ?? (run === download ? downloadTwitter : undefined);
+      if (!recovered && enabled && external) {
         await options.onExternalFallback?.().catch(() => {});
         await Promise.all(['video.mp4', 'video.mp4.part', 'video.mp4.ytdl'].map(name => rm(join(directory, name), { force: true })));
-        console.log('Download principal falhou; tentando serviço externo para Instagram.');
+        console.log('Download principal falhou; tentando contingência externa.');
         try { await external(canonical, directory); recovered = true; }
-        catch { /* Não registrar resposta, cookies ou URL assinada do serviço externo. */ }
+        catch { /* Não registrar resposta, cookies ou URLs do serviço externo. */ }
       }
       if (!recovered) throw rateLimit ?? error;
     }

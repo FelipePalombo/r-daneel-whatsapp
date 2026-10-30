@@ -32,6 +32,8 @@ test('mantém arquivo até envio e remove temporários após sucesso ou falha', 
       assert.ok(args.includes('--ignore-config'));
       // Instagram pode não anunciar duração: o limite é validado com ffprobe após baixar.
       assert.ok(args.includes('duration <=? 180 & !is_live'));
+      const selector = args[args.indexOf('-f') + 1]!;
+      assert.ok(selector.includes('[filesize<=?16777216][filesize_approx<=?16777216]'));
       await writeFile(join(dir, 'video.mp4'), 'fixture');
     });
     if (fail) await assert.rejects(result); else await result;

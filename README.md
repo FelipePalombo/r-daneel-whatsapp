@@ -302,7 +302,51 @@ corpo assinado), [iGram](https://igram.world/) (`/api/convert`, assinatura),
 [SSSTwitter](https://ssstwitter.com/) (`POST /`) e [TWDown](https://twdown.net/)
 (`/download.php`). Não foram habilitados: os dois primeiros exigem um fluxo assinado
 não validado; nos testes da Oracle, o TwitterVideoDownloader respondeu 403 e os outros
-dois não retornaram mídia. Twitter/X continua com yt-dlp e Cobalt.
+dois não retornaram mídia. Twitter/X ganhou as contingências descritas abaixo.
 
 Código: `src/snapinsta.ts` e `src/public-http.ts`; testes determinísticos usam respostas
 sintéticas sem tokens reais. As chamadas externas reais são verificações manuais.
+
+
+## Contingências públicas para Twitter/X
+
+Depois de yt-dlp e Cobalt, o bot tenta [FxTwitter](https://docs.fxembed.com/api/introduction/)
+e depois [VxTwitter](https://github.com/dylanpdx/BetterTwitFix#api). Vale para links
+isolados, `!v`/`!video` e `!vf`/`!vfigurinha`. O aviso de contingência é enviado uma
+vez antes dos serviços externos. Os dois provedores compartilham **60 segundos**
+para consultas e transferências; o primeiro recebe até 30 segundos quando ambos
+estão habilitados. Não se acrescenta um minuto por provedor.
+
+Ambos estão habilitados por padrão. `FXTWITTER_ENABLED=false` e
+`VXTWITTER_ENABLED=false` desativam cada opção separadamente. No servidor Compose,
+configure as variáveis no ambiente do serviço `bot` para alterar esses padrões.
+As consultas compartilham o identificador público do post com os provedores,
+sem conta, chave de API ou cookies pessoais. O cliente usa User-Agent próprio.
+
+`src/twitter-download.ts` consulta `GET https://api.fxtwitter.com/2/status/<id>`
+e `GET https://api.vxtwitter.com/i/status/<id>`. Confere o ID retornado e usa somente
+o primeiro vídeo do post, sem aproveitar vídeos de citações. Aceita MP4 direto de
+`video.twimg.com`; rejeita HLS, HEVC, hosts diferentes, destinos privados e redirects
+não permitidos. Mantém os limites de 16 MiB e 180 segundos, validação com ffprobe,
+fila serial e limpeza. Erro no envio não aciona novo download. Serviços públicos
+podem ficar indisponíveis; não há garantia de acesso a todo post.
+
+Testes em `test/twitter-download.test.ts`: ordem, recuperação pelo Vx, tentativas de qualidade
+por provedor, respostas inválidas, limites, DNS, tempo compartilhado, configuração
+e ausência de novo download após falha no envio. Não fazem consultas externas reais.
+
+
+### Seleção de qualidade dentro do limite
+
+O download direto considera `filesize` e `filesize_approx` quando disponíveis para
+escolher um MP4 estimado em até 16 MiB. O tamanho real continua limitado durante e
+após a transferência; estimativas não substituem a validação final.
+
+Na contingência do X, as URLs do primeiro vídeo são deduplicadas e ordenadas por
+resolução, com até oito opções por provedor. Se o Content-Length indicar excesso,
+o corpo é fechado sem baixar o arquivo. Se não houver tamanho anunciado, a leitura
+para ao ultrapassar 16 MiB. Em ambos os casos, tenta a próxima qualidade menor,
+dentro do mesmo orçamento de 60 segundos compartilhado entre FxTwitter e VxTwitter.
+Um arquivo que cabe encerra as tentativas; não baixa todos os formatos. O VxTwitter
+atualmente retorna uma única qualidade no fluxo observado. A ordem de provedores,
+limite de duração, validação ffprobe e tratamento de falhas de envio são preservados.

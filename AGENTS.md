@@ -233,5 +233,28 @@ DNS, consultas e mídia. Compartilha somente a URL pública solicitada e usa coo
 públicos temporários em memória; não usar login pessoal, CAPTCHA ou executar JS remoto.
 `src/public-http.ts` valida HTTPS, DNS e cada redirect, fixa o IP e limita os corpos.
 Preservar allowlist dos hosts observados, validação ffprobe, limites finais e limpeza.
-X continua sem provedor externo adicional validado. Não registrar tokens ou URLs
+Não registrar tokens ou URLs
 assinadas, nem adicionar chamadas reais dos sites aos testes automáticos.
+
+
+## Contingências de Twitter/X
+
+`src/twitter-download.ts`: após yt-dlp e Cobalt, tentar FxTwitter e VxTwitter em
+sequência. Compartilhar 60 segundos de consultas e mídia; limitar o primeiro a 30s
+quando ambos habilitados. Um aviso antes da etapa externa, sem um minuto por serviço.
+Habilitados por padrão; `FXTWITTER_ENABLED=false` e `VXTWITTER_ENABLED=false` controlam
+cada serviço. Usar User-Agent próprio, sem login/cookies. Conferir ID do post e usar
+somente o primeiro vídeo, sem herdar mídia de citações. Allowlist das APIs e de
+`video.twimg.com`, HTTPS público com DNS fixado, corpos limitados, ffprobe antes do
+envio, 16 MiB/180s e limpeza existentes. Falha de envio não pode baixar novamente.
+
+
+### Qualidade de vídeo e tamanho
+
+Considerar `filesize_approx` além de `filesize` no seletor do yt-dlp. Na contingência
+Twitter/X, deduplicar e ordenar as qualidades do primeiro vídeo por resolução;
+no máximo oito opções por provedor. Ao exceder tamanho anunciado ou real, fechar a
+resposta e tentar a próxima qualidade dentro do mesmo orçamento. Não baixar todos
+os formatos nem consultar novamente metadados por qualidade. Outros erros seguem
+para o próximo provedor. `HttpBodyTooLargeError` distingue excesso de tamanho de
+falhas de rede/segurança. Nunca relaxar 16 MiB/180s ou repetir por falha no envio.

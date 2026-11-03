@@ -64,7 +64,7 @@ function connect() {
       if (pairing) qrcode.generate(qr, { small: true });
       else { console.error('Sessão precisa ser vinculada novamente em terminal local.'); stop(1); }
     }
-    if (connection === 'open') { attempt = 0; console.log('R. Daneel conectado. Envie foto, vídeo ou GIF com !figurinha ou um link de vídeo do Twitter/X ou Instagram.'); }
+    if (connection === 'open') { attempt = 0; console.log('R. Daneel conectado. Envie foto, vídeo ou GIF com !figurinha ou um link de Instagram, Twitter/X ou YouTube Shorts.'); }
     if (connection === 'close' && !stopping) {
       current.ev.removeAllListeners('messages.upsert');
       current.ev.removeAllListeners('connection.update');
@@ -127,7 +127,7 @@ function connect() {
             return;
           }
           if (videoRequest) {
-            await current.sendMessage(jid, { text: 'Vou buscar o vídeo. Pode levar até três minutos.' });
+            await current.sendMessage(jid, { text: 'Vou buscar o vídeo. Pode levar alguns minutos.' });
             await sendVideoResponse(videoRequest, {
               video: async (path, link) => { await current.sendMessage(jid, { video: { url: path }, mimetype: 'video/mp4', caption: link }, { quoted: message }); },
               sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated: true, width: 512, height: 512 }, { quoted: message }); },

@@ -350,3 +350,64 @@ dentro do mesmo orçamento de 60 segundos compartilhado entre FxTwitter e VxTwit
 Um arquivo que cabe encerra as tentativas; não baixa todos os formatos. O VxTwitter
 atualmente retorna uma única qualidade no fluxo observado. A ordem de provedores,
 limite de duração, validação ffprobe e tratamento de falhas de envio são preservados.
+
+
+## YouTube Shorts
+
+Aceita somente links HTTPS `youtube.com/shorts/<id>` (também `www` e `m`),
+com ID de 11 caracteres. Remove parâmetros de rastreamento. Links `watch`, `youtu.be`,
+playlists, canais, transmissões e demais formatos YouTube estão fora desta versão.
+
+- Link isolado, `!v <link>` ou `!video <link>`: vídeo completo com áudio, até 3 minutos e 16 MiB.
+- `!vf <link>` ou `!vfigurinha <link>`: um download; envia vídeo e depois figurinha animada
+  dos primeiros 10 segundos, com aviso de recorte quando necessário.
+- A figurinha mantém 512×512, até 500.000 bytes, preenchimento do quadrado sem corte
+  e compressão progressiva. Um vídeo anexado com `!f` continua limitado a 10 segundos.
+
+O download direto habilita `--js-runtimes node`, usando Node 22 e os scripts EJS da
+instalação `yt-dlp[default,curl-cffi]`. O Docker verifica a presença de `yt-dlp-ejs`.
+Ver [instruções oficiais de EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
+Não são usados login, cookies pessoais ou componentes remotos baixados automaticamente.
+O yt-dlp roda com `--fixup never`; o remux é um subprocesso FFmpeg controlado pelo bot.
+
+`src/youtube-direct.ts` extrai metadados uma vez, seleciona H.264/AAC até 720p
+(menor dimensão até 720 e maior até 1280), ordena qualidades e tenta no máximo oito
+combinações. A soma dos tamanhos exatos ou estimados das faixas precisa caber em
+16 MiB, reservando 128 KiB de container. A soma real de faixas, inclusive `.part`,
+é monitorada; excesso tenta a próxima combinação. Tamanho exato prevalece sobre
+estimativa. FFmpeg junta as faixas com stream copy, sem recodificar.
+
+Consultas, faixas e remux compartilham os 110 segundos do download direto. O MP4
+final também precisa caber em 16 MiB e passar no ffprobe com vídeo, áudio e até
+180 segundos. Durante remux, componentes e saída são limitados separadamente;
+a cópia temporária não dobra o tamanho do vídeo permitido. Metadados com URLs
+assinadas ficam somente no diretório temporário, com permissão 600, e são removidos.
+
+### Contingência do YouTube
+
+Ordem: yt-dlp → Cobalt local configurado → instância comunitária
+`https://rue-cobalt.xenon.zone/`. `YOUTUBE_FALLBACK_ENABLED=false` desativa a última
+etapa, habilitada por padrão. A [instância está no diretório comunitário](https://cobalt.directory/)
+e foi validada em 03/11/2026, sem conta ou CAPTCHA. A URL pública solicitada é
+compartilhada com esse serviço externo, sem descoberta automática de outros provedores.
+Não há garantia de disponibilidade; autenticação ou bloqueio recebem erro controlado.
+
+`src/youtube-download.ts` pede vídeo H.264 com áudio até 720p e processamento remoto,
+com timeout total de 60 segundos para consulta e mídia, um aviso antes de iniciar,
+texto de até 1 MiB e mídia de até 16 MiB. Usa HTTPS público, DNS validado com IP
+fixado e até três redirects por requisição; permite somente o host da instância e
+subdomínios de `googlevideo.com` na transferência. Nunca usa Snapinsta, FxTwitter ou
+VxTwitter para YouTube. URLs assinadas, respostas e dados de sessão não entram nos logs.
+
+Testes determinísticos em `test/youtube.test.ts`, sem chamadas externas. Validações
+reais usam container isolado, sem iniciar a sessão WhatsApp nem enviar mensagens.
+
+
+Validação em 03/11/2026 com o Short `3S8AMkIJhL4`: fluxo real de `!vf` no Mac,
+MP4 H.264/AAC 720×1036, 3.520.017 bytes e 14,12 segundos; figurinha dos primeiros
+10 segundos com 308.942 bytes e 40 quadros. No container isolado da Oracle, yt-dlp
+e Cobalt local falharam por exigência de login; a contingência comunitária recuperou
+o vídeo (3.512.739 bytes, 14,15 segundos) e gerou figurinha de 309.576 bytes, 40 quadros
+e 10 segundos. Ordem observada: aviso de contingência → vídeo → aviso de recorte →
+figurinha. Um envio simulado de cada mídia, sem segunda sessão WhatsApp. Temporários
+removidos. Suíte local: 87 testes aprovados. Isso não garante disponibilidade futura.

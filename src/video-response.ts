@@ -1,4 +1,4 @@
-import { withVideo } from './video.js';
+import { withVideo, videoPlatformName } from './video.js';
 import { createLinkedVideoSticker } from './animated-sticker.js';
 import type { VideoCommand } from './request.js';
 
@@ -21,7 +21,7 @@ export async function sendVideoResponse(request: VideoCommand, send: Sender,
       await send.text('O vídeo foi enviado, mas não consegui criar ou enviar a figurinha. Tente um trecho menor ou outro vídeo.');
     }
   }, undefined, { onRetry: async () => {
-    const platform = request.url.includes('instagram.com/') ? 'O Instagram' : 'O Twitter/X';
+    const platform = videoPlatformName(request.url);
     await send.text(`${platform} limitou o acesso. Vou aguardar alguns segundos e tentar mais uma vez.`);
   }, onExternalFallback: async () => {
     await send.text('O download principal falhou. Vou tentar um serviço alternativo; pode levar até mais um minuto.');

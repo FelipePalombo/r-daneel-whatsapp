@@ -1,6 +1,8 @@
 import { downloadCobalt } from './cobalt.js';
 import { downloadSnapinsta } from './snapinsta.js';
 import { downloadTwitter } from './twitter-download.js';
+import { downloadYoutube } from './youtube-download.js';
+import { downloadYoutubeDirect, youtubeMediaUsage, YoutubeSizeError, type YoutubeRunner } from './youtube-direct.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
@@ -23,10 +25,10 @@ export function videoDownloadFailure(detail: string, killed = false): Error {
 }
 export function videoFailureReply(error: unknown, url: string): string {
   if (error instanceof VideoRateLimitError) {
-    const platform = url.includes('instagram.com/') ? 'O Instagram' : 'O Twitter/X';
+    const platform = videoPlatformName(url);
     return `${platform} limitou temporariamente o acesso do servidor. Não consegui contornar esse bloqueio agora. Aguarde e tente novamente mais tarde; reenviar imediatamente pode falhar de novo.`;
   }
-  return 'Não consegui baixar esse vídeo. Precisa ser uma publicação pública com vídeo de até 3 minutos e 16 MB. O Instagram ou X também pode exigir login ou bloquear o download temporariamente.';
+  return `Não consegui baixar esse vídeo. Precisa ser uma publicação pública com vídeo de até 3 minutos e 16 MiB. ${videoPlatformName(url)} pode exigir login ou bloquear o download temporariamente; as tentativas disponíveis não conseguiram concluir.`;
 }
 
 
@@ -42,11 +44,28 @@ export function videoUrl(text: string): string | undefined {
       const kind = post[1] === 'reels' ? 'reel' : post[1];
       return `https://www.instagram.com/${kind}/${post[2]}/`;
     }
+    if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname)) {
+      const short = /^\/shorts\/([A-Za-z0-9_-]{11})\/?$/.exec(url.pathname);
+      if (!short || url.hash) return;
+      return `https://www.youtube.com/shorts/${short[1]}`;
+    }
     if (!['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'].includes(url.hostname)) return;
     const match = /^\/(?:[a-zA-Z0-9_]{1,15}|i\/web)\/status\/(\d{1,25})(?:\/video\/\d+)?\/?$/.exec(url.pathname);
     if (!match) return;
     return `https://x.com/i/web/status/${match[1]}`;
   } catch { return; }
+}
+
+export type VideoPlatform = 'instagram' | 'twitter' | 'youtube';
+export function videoPlatform(value: string): VideoPlatform | undefined {
+  const url = videoUrl(value);
+  if (!url) return;
+  const host = new URL(url).hostname;
+  return host === 'www.instagram.com' ? 'instagram' : host === 'www.youtube.com' ? 'youtube' : 'twitter';
+}
+export function videoPlatformName(value: string): string {
+  const platform = videoPlatform(value);
+  return platform === 'instagram' ? 'O Instagram' : platform === 'youtube' ? 'O YouTube' : platform === 'twitter' ? 'O Twitter/X' : 'A plataforma';
 }
 
 export type VideoRunner = (args: string[], directory: string, timeoutMs?: number) => Promise<void>;
@@ -55,32 +74,51 @@ export type VideoRetryOptions = {
   onExternalFallback?: () => Promise<void>;
   externalFallback?: typeof downloadSnapinsta;
   twitterFallback?: typeof downloadTwitter;
+  youtubeFallback?: typeof downloadYoutube;
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
   fallback?: typeof downloadCobalt;
 };
 
-const download: VideoRunner = (args, directory, timeoutMs = DIRECT_VIDEO_TIMEOUT_MS) => new Promise((resolve, reject) => {
-  // Seleciona MP4 com áudio e vídeo juntos: não cria processos de merge/transcoding.
+const executeYtDlp: YoutubeRunner = (args, directory, timeoutMs) => new Promise((resolve, reject) => {
+  const youtubeTracks = args.includes('--load-info-json');
+  let sizeExceeded = false, stopped = false, checking = false;
   const child = execFile(process.env.YT_DLP_PATH ?? (existsSync('.tools/yt-dlp-current/bin/yt-dlp') ? resolvePath('.tools/yt-dlp-current/bin/yt-dlp') : existsSync('.tools/yt-dlp/bin/yt-dlp') ? resolvePath('.tools/yt-dlp/bin/yt-dlp') : 'yt-dlp'), args, {
-    cwd: directory, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
+    cwd: directory, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
   }, (error, stdout, stderr) => {
-    clearInterval(watch);
-    if (!error) { resolve(); return; }
+    stopped = true; clearInterval(watch);
+    if (youtubeTracks && sizeExceeded) { reject(new YoutubeSizeError('Faixas do Short acima de 16 MiB.')); return; }
+    if (!error) { resolve(stdout); return; }
     const detail = `${stdout} ${stderr}`;
     reject(videoDownloadFailure(detail, !!error.killed));
   });
-  // Também limita downloads cujo tamanho não foi anunciado pelo servidor.
+  // Inclui a soma real das faixas de Shorts, inclusive arquivos .part.
   const watch = setInterval(() => {
-    void Promise.all(['video.mp4', 'video.mp4.part'].map(name => stat(join(directory, name)).catch(() => undefined)))
-      .then(files => { if (files.some(file => file && file.size > MAX_VIDEO_BYTES)) child.kill('SIGKILL'); });
+    if (checking || stopped) return;
+    checking = true;
+    void (async () => {
+      if (youtubeTracks) {
+        const usage = await youtubeMediaUsage(directory);
+        sizeExceeded = usage.tracks > MAX_VIDEO_BYTES || usage.output > MAX_VIDEO_BYTES;
+      } else {
+        const files = await Promise.all(['video.mp4', 'video.mp4.part'].map(name => stat(join(directory, name)).catch(() => undefined)));
+        sizeExceeded = files.some(file => file && file.size > MAX_VIDEO_BYTES);
+      }
+      if (sizeExceeded && !stopped) child.kill('SIGKILL');
+    })().finally(() => { checking = false; });
   }, 200);
 });
+const download: VideoRunner = async (args, directory, timeoutMs = DIRECT_VIDEO_TIMEOUT_MS) => {
+  const canonical = args.at(-1)!;
+  if (videoPlatform(canonical) === 'youtube') await downloadYoutubeDirect(canonical, directory, timeoutMs, executeYtDlp);
+  else await executeYtDlp(args, directory, timeoutMs);
+};
 
 /** O arquivo existe somente durante o callback de envio, inclusive em caso de erro. */
 export async function withVideo(url: string, send: (path: string) => Promise<void>, run: VideoRunner = download, options: VideoRetryOptions = {}): Promise<void> {
   const canonical = videoUrl(url);
   if (!canonical) throw new Error('Link inválido.');
+  const platform = videoPlatform(canonical)!;
   const directory = await mkdtemp(join(tmpdir(), 'r-daneel-video-'));
   const now = options.now ?? Date.now;
   const deadline = now() + DIRECT_VIDEO_TIMEOUT_MS;
@@ -88,7 +126,7 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
   const attempt = async () => {
     const remaining = deadline - now();
     if (remaining <= 0) throw rateLimit ?? new Error('Download excedeu o tempo permitido.');
-    await run([
+    await run(platform === 'youtube' ? ['--js-runtimes', 'node', '--', canonical] : [
       '--ignore-config', '--no-cache-dir', '--no-playlist', '--playlist-items', '1',
       '--no-progress', '--no-warnings', '--socket-timeout', '15', '--retries', '1',
       '--match-filter', 'duration <=? 180 & !is_live',
@@ -123,12 +161,14 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
         try { await (options.fallback ?? downloadCobalt)(canonical, directory, endpoint); recovered = true; }
         catch { /* A próxima contingência pode recuperar a falha de extração. */ }
       }
-      const instagram = canonical.startsWith('https://www.instagram.com/');
-      const enabled = instagram ? process.env.SNAPINSTA_ENABLED !== 'false'
+      const enabled = platform === 'instagram' ? process.env.SNAPINSTA_ENABLED !== 'false'
+        : platform === 'youtube' ? process.env.YOUTUBE_FALLBACK_ENABLED !== 'false'
         : process.env.FXTWITTER_ENABLED !== 'false' || process.env.VXTWITTER_ENABLED !== 'false';
-      const external = instagram
+      const external = platform === 'instagram'
         ? options.externalFallback ?? (run === download ? downloadSnapinsta : undefined)
-        : options.twitterFallback ?? (run === download ? downloadTwitter : undefined);
+        : platform === 'youtube'
+          ? options.youtubeFallback ?? (run === download ? downloadYoutube : undefined)
+          : options.twitterFallback ?? (run === download ? downloadTwitter : undefined);
       if (!recovered && enabled && external) {
         await options.onExternalFallback?.().catch(() => {});
         await Promise.all(['video.mp4', 'video.mp4.part', 'video.mp4.ytdl'].map(name => rm(join(directory, name), { force: true })));
@@ -149,9 +189,10 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
             try {
               const info = JSON.parse(output);
               const duration = Number(info.format?.duration);
-              if (!(duration > 0 && duration <= 180) || !info.streams?.some((stream: { codec_type: string }) => stream.codec_type === 'video')) throw new Error();
+              if (!(duration > 0 && duration <= 180) || !info.streams?.some((stream: { codec_type: string }) => stream.codec_type === 'video') ||
+                  (platform === 'youtube' && !info.streams?.some((stream: { codec_type: string }) => stream.codec_type === 'audio'))) throw new Error();
               resolve();
-            } catch { reject(new Error('Arquivo inválido ou vídeo acima de 3 minutos.')); }
+            } catch { reject(new Error('Arquivo inválido, sem áudio exigido ou vídeo acima de 3 minutos.')); }
           });
       });
     }

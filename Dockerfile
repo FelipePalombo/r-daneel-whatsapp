@@ -10,6 +10,7 @@ FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates ffmpeg \
     && python3 -m venv /opt/yt-dlp \
     && /opt/yt-dlp/bin/pip install --no-cache-dir 'yt-dlp[default,curl-cffi]==2026.10.21' \
+    && /opt/yt-dlp/bin/python -c "import importlib.metadata; importlib.metadata.version('yt-dlp-ejs')" \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production AUTH_DIR=/app/data/auth YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 WORKDIR /app

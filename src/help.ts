@@ -16,8 +16,8 @@ Até 10 segundos e 10 MiB. Sem áudio.
 
 🎬 *Baixar vídeo*
 !video <link> ou !v <link>
-Instagram e Twitter/X: até 3 minutos e 16 MiB.
-Enviar só o link também funciona. Retorna um vídeo por publicação.
+Instagram, Twitter/X e YouTube Shorts: até 3 minutos e 16 MiB.
+Enviar só o link também funciona. YouTube: use youtube.com/shorts/<id>. Retorna um vídeo por publicação.
 
 ✨ *Vídeo + figurinha*
 !vfigurinha <link> ou !vf <link>

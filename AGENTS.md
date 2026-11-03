@@ -258,3 +258,27 @@ resposta e tentar a próxima qualidade dentro do mesmo orçamento. Não baixar t
 os formatos nem consultar novamente metadados por qualidade. Outros erros seguem
 para o próximo provedor. `HttpBodyTooLargeError` distingue excesso de tamanho de
 falhas de rede/segurança. Nunca relaxar 16 MiB/180s ou repetir por falha no envio.
+
+
+## YouTube Shorts
+
+Aceitar somente HTTPS em `youtube.com`, `www.youtube.com` e `m.youtube.com`, caminho
+`/shorts/<id de 11 caracteres>`. Canonicalizar e remover rastreamento. Usar a mesma
+fila, autorização e comandos de vídeo, incluindo `!vf`; não aceitar watch/youtu.be,
+playlists ou canais. `videoPlatform`/`videoPlatformName` centralizam roteamento e texto.
+
+`src/youtube-direct.ts`: metadados únicos, `--js-runtimes node` e EJS oficial já
+instalado com o grupo default do yt-dlp. Preferir H.264/AAC até 720p, faixas separadas
+quando necessário e remux FFmpeg stream copy. Soma de faixas até 16 MiB, monitorando
+.part e saída, com timeout compartilhado de 110s; validar MP4 com áudio/vídeo no
+ffprobe. Até oito combinações; diminuir qualidade ao exceder tamanho, sem repetir
+extração de metadados. JSON temporário com URLs assinadas deve ser 600 e removido.
+
+Depois de yt-dlp e Cobalt local, `src/youtube-download.ts` pode usar a instância
+comunitária rue-cobalt.xenon.zone, explicitamente selecionada neste projeto.
+Habilitada por padrão; `YOUTUBE_FALLBACK_ENABLED=false` desativa. Aviso único antes,
+60s totais, 1 MiB de texto e 16 MiB de mídia. Allowlist HTTPS da instância e subdomínios
+googlevideo.com, DNS fixado e redirects validados. Não descobrir novos provedores,
+usar cookies pessoais, resolver CAPTCHA ou rotear YouTube para Instagram/Twitter.
+Reaproveitar figurinha dos primeiros 10s, quadrada, até 500.000 bytes, sem áudio.
+Sem segunda sessão WhatsApp ou mensagens reais em testes; push/deploy só autorizados.

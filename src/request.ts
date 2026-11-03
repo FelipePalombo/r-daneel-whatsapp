@@ -110,8 +110,8 @@ export function commandUsage(text: string): string | undefined {
   switch (name) {
     case '!help': return 'Use !help, sem argumentos, para listar os comandos.';
     case '!figurinha': case '!f': return 'Envie uma foto, vídeo ou GIF com a legenda !figurinha ou !f. Vídeos e GIFs devem ter até 10 segundos e 10 MiB.';
-    case '!video': case '!v': return 'Use !video <link> ou !v <link de publicação pública do Instagram ou Twitter/X>.';
-    case '!vfigurinha': case '!vf': return 'Use !vfigurinha <link> ou !vf <link de publicação pública do Instagram ou Twitter/X> para receber o vídeo e a figurinha.';
+    case '!video': case '!v': return 'Use !video <link> ou !v <link de publicação pública do Instagram, Twitter/X ou YouTube Shorts>.';
+    case '!vfigurinha': case '!vf': return 'Use !vfigurinha <link> ou !vf <link de publicação pública do Instagram, Twitter/X ou YouTube Shorts> para receber o vídeo e a figurinha.';
     case '!gifigurinha': case '!gf': return 'Use !gf <link HTTPS direto de GIF/WebP animado>, ou envie vídeo/GIF com a legenda !gf (até 10 segundos e 10 MiB).';
   }
 }

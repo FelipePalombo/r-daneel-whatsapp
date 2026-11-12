@@ -30,6 +30,8 @@ export async function sendVideoResponse(request: VideoCommand, send: Sender,
   }, undefined, { onRetry: async () => {
     const platform = videoPlatformName(request.url);
     await send.text(`${platform} limitou o acesso. Vou aguardar alguns segundos e tentar mais uma vez.`);
+  }, onCompression: async () => {
+    await send.text('O vídeo é grande; vou compactar para caber no WhatsApp. Isso pode levar alguns minutos.');
   }, onExternalFallback: async () => {
     await send.text('O download principal falhou. Vou tentar um serviço alternativo; pode levar até mais um minuto.');
   } }); } catch (error) {

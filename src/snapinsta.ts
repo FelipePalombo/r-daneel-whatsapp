@@ -1,7 +1,8 @@
 import sharp from 'sharp';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { publicHttp, type PublicHttp } from './public-http.js';
+import {compressInstagramVideo, InstagramCompressionError, INSTAGRAM_INPUT_LIMIT} from './instagram-compress.js';
+import { publicHttp, HttpBodyTooLargeError, type PublicHttp } from './public-http.js';
 
 const HOME = 'https://snapinsta.ai/';
 const MAX_TEXT = 1024 * 1024;
@@ -66,7 +67,7 @@ export function snapinstaMedia(response: string): string {
   throw new Error('Serviço externo não encontrou vídeo.');
 }
 
-export async function downloadSnapinsta(url: string, directory: string, io?: PublicHttp): Promise<void> {
+export async function downloadSnapinsta(url: string, directory: string, io?: PublicHttp, options: {onCompression?:()=>Promise<void>} = {}): Promise<void> {
   if (!/^https:\/\/www\.instagram\.com\/(?:p|reel|tv)\/[\w-]+\/$/.test(url)) throw new Error('Link incompatível com a contingência.');
   const signal = AbortSignal.timeout(EXTERNAL_VIDEO_TIMEOUT_MS);
   const pageOptions = { signal, limit: MAX_TEXT, allowedHost: (host: string) => host === 'snapinsta.ai' };
@@ -77,7 +78,8 @@ export async function downloadSnapinsta(url: string, directory: string, io?: Pub
     headers: { ...headers, Origin: HOME.slice(0, -1), 'Content-Type': 'application/x-www-form-urlencoded', ...(cookie ? { Cookie: cookie } : {}) },
     body: snapinstaForm(home.body.toString('utf8'), url) }, io);
   const media = snapinstaMedia(result.body.toString('utf8'));
-  const video = await publicHttp(media, { signal, limit: 16 * 1024 * 1024, allowedHost: host => host === 'd.rapidcdn.app', headers }, io);
+  const video = await publicHttp(media, { signal, limit: INSTAGRAM_INPUT_LIMIT, allowedHost: host => host === 'd.rapidcdn.app', headers }, io)
+    .catch(error => { if(error instanceof HttpBodyTooLargeError) throw new InstagramCompressionError('A mídia excede o limite de entrada de 60 MiB.'); throw error; });
   if (video.body.length < 12 || video.body.toString('ascii', 4, 8) !== 'ftyp') {
     // Só links de publicação aceitam imagem; nunca convertem a capa de um Reel.
     if (!new URL(url).pathname.startsWith('/p/') || video.body.length > 10 * 1024 * 1024) throw new Error('Serviço externo não retornou mídia compatível.');
@@ -87,5 +89,9 @@ export async function downloadSnapinsta(url: string, directory: string, io?: Pub
     throw new InstagramPhotoAvailable(video.body, mime);
   }
   signal.throwIfAborted();
-  await writeFile(join(directory, 'video.mp4'), video.body, { signal });
+  if(video.body.length > 16 * 1024 * 1024) {
+    await writeFile(join(directory,'instagram-original.mp4'),video.body,{signal});
+    await options.onCompression?.().catch(()=>{});
+    await compressInstagramVideo(directory);
+  } else await writeFile(join(directory, 'video.mp4'), video.body, { signal });
 }

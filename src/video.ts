@@ -1,3 +1,4 @@
+import { InstagramCompressionError } from './instagram-compress.js';
 import { downloadCobalt } from './cobalt.js';
 import { downloadSnapinsta, InstagramPhotoAvailable } from './snapinsta.js';
 import { downloadTwitter } from './twitter-download.js';
@@ -24,6 +25,7 @@ export function videoDownloadFailure(detail: string, killed = false): Error {
     : killed ? 'Download excedeu o tempo ou tamanho permitido.' : 'Falha de rede ou do extrator de vídeo.');
 }
 export function videoFailureReply(error: unknown, url: string): string {
+  if (error instanceof InstagramCompressionError) return `${error.message} Tente um vídeo mais curto ou menor.`;
   if (error instanceof VideoRateLimitError) {
     const platform = videoPlatformName(url);
     return `${platform} limitou temporariamente o acesso do servidor. Não consegui contornar esse bloqueio agora. Aguarde e tente novamente mais tarde; reenviar imediatamente pode falhar de novo.`;
@@ -72,6 +74,7 @@ export type VideoRunner = (args: string[], directory: string, timeoutMs?: number
 export type VideoRetryOptions = {
   onRetry?: () => Promise<void>;
   onExternalFallback?: () => Promise<void>;
+  onCompression?: () => Promise<void>;
   externalFallback?: typeof downloadSnapinsta;
   twitterFallback?: typeof downloadTwitter;
   youtubeFallback?: typeof downloadYoutube;
@@ -173,8 +176,8 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
         await options.onExternalFallback?.().catch(() => {});
         await Promise.all(['video.mp4', 'video.mp4.part', 'video.mp4.ytdl'].map(name => rm(join(directory, name), { force: true })));
         console.log('Download principal falhou; tentando contingência externa.');
-        try { await external(canonical, directory); recovered = true; }
-        catch (error) { if (error instanceof InstagramPhotoAvailable && platform === 'instagram') throw error; /* Não registrar resposta, cookies ou URLs do serviço externo. */ }
+        try { if(platform === 'instagram' && external === downloadSnapinsta) await downloadSnapinsta(canonical, directory, undefined, {onCompression:options.onCompression}); else await external(canonical, directory); recovered = true; }
+        catch (error) { if ((error instanceof InstagramPhotoAvailable || error instanceof InstagramCompressionError) && platform === 'instagram') throw error; /* Não registrar resposta, cookies ou URLs do serviço externo. */ }
       }
       if (!recovered) throw rateLimit ?? error;
     }

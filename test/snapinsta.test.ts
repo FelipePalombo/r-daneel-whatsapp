@@ -183,3 +183,33 @@ test('imagem na contingência percorre a fila de vídeo sem repetir o download e
     assert.deepEqual(events,['video-attempt','external','photo-download','image','progress','sticker']);await assert.rejects(access(dir));
   } finally {if(previous===undefined)delete process.env.COBALT_API_URL;else process.env.COBALT_API_URL=previous;}
 });
+
+test('vídeo acima de 16 MiB é baixado uma vez, avisa e compacta antes de retornar',async()=>{
+  const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');
+  const dir=await mkdtemp(join(tmpdir(),'snap-large-'));let calls=0,notices=0;
+  try {
+    const source=join(dir,'small.mp4');
+    await promisify(execFile)('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=size=96x96:rate=10:duration=1','-f','lavfi','-i','sine=duration=1','-threads','1','-c:v','libx264','-c:a','aac',source]);
+    const original=await readFile(source);const big=Buffer.concat([original,Buffer.alloc(16*1024*1024)]);
+    await downloadSnapinsta(url,dir,network(async()=>{
+      if(++calls===1)return reply('<input name="token" value="fresh">');
+      if(calls===2)return reply(response);
+      return reply(big);
+    }),{onCompression:async()=>{notices++;}});
+    assert.equal(calls,3);assert.equal(notices,1);assert.ok((await readFile(join(dir,'video.mp4'))).length<16*1024*1024);
+    await assert.rejects(access(join(dir,'instagram-original.mp4')));
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('contingência rejeita tamanho acima de 60 MiB antes de ler o arquivo',async()=>{
+  const {InstagramCompressionError}=await import('../src/instagram-compress.js');
+  const dir=await mkdtemp(join(tmpdir(),'snap-over-'));let calls=0;
+  try {
+    await assert.rejects(downloadSnapinsta(url,dir,network(async()=>{
+      if(++calls===1)return reply('<input name="token" value="fresh">');
+      if(calls===2)return reply(response);
+      return reply('x',{'content-length':String(60*1024*1024+1)});
+    })),InstagramCompressionError);
+    await assert.rejects(access(join(dir,'video.mp4')));
+  } finally {await rm(dir,{recursive:true,force:true});}
+});

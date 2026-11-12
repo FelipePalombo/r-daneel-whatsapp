@@ -2,7 +2,7 @@
 
 R. Daneel é o bot pessoal de WhatsApp do Felipe, em homenagem ao robô de Isaac Asimov. O projeto começa com figurinhas e poderá receber outras funcionalidades conforme surgirem necessidades.
 
-A primeira função: envie uma **imagem com a legenda `!figurinha`** e receba uma figurinha estática. Implementado em TypeScript + Baileys + Sharp, com conversão local.
+A primeira função: envie uma **imagem** e receba uma figurinha estática. Implementado em TypeScript + Baileys + Sharp, com conversão local.
 
 Pasta e nome do pacote: `r-daneel-whatsapp`. Caminho local: `/Users/felipepalombo/Projetos/r-daneel-whatsapp`.
 
@@ -36,16 +36,16 @@ PAIRING_MODE=true npm run dev
 ```
 
 5. No aplicativo da **conta do bot**, abra Configurações → Aparelhos conectados → Conectar aparelho e escaneie o QR do terminal.
-6. Envie uma foto do seu número pessoal para o bot, com a legenda `!figurinha`.
+6. Envie uma foto do seu número pessoal para o bot, sem precisar de legenda.
 7. Nos próximos usos: `npm run build` e `npm start`. A sessão será reutilizada.
 
 QR é credencial temporária: não compartilhe captura nem publique logs de vinculação. O programa exige terminal interativo para exibi-lo. Sem número autorizado, a inicialização falha antes de conectar.
 
-Se não houver resposta: confirme a legenda, número autorizado, conexão e formato da imagem. Mensagens com identificador LID só são aceitas quando o WhatsApp fornece também o número alternativo correspondente; ausência desse mapeamento é bloqueada por segurança.
+Se não houver resposta: confirme o número autorizado, conexão e formato da imagem. Mensagens com identificador LID só são aceitas quando o WhatsApp fornece também o número alternativo correspondente; ausência desse mapeamento é bloqueada por segurança.
 
 ## Comportamento e limites
 
-- Apenas conversas privadas dos números autorizados; ignora grupos, status, mensagens próprias, histórico, visualização única e imagens sem comando.
+- Apenas conversas privadas dos números autorizados; ignora grupos, status, mensagens próprias, histórico, e visualização única.
 - No máximo três trabalhos pendentes; intervalo mínimo de dois segundos. Excedentes são ignorados. Uma conversão por vez.
 - Downloads limitados a 10 MB reais e timeout de rede de 30 segundos.
 - Deduplicação em memória por dez minutos; não persiste entre reinícios.
@@ -179,24 +179,20 @@ Referências: [API Cobalt](https://github.com/imputnet/cobalt/blob/main/docs/api
 
 ## Figurinhas animadas
 
-Envie **vídeo ou GIF com a legenda `!figurinha`**. Os GIFs enviados pelo seletor
+Envie **vídeo ou GIF**. Os GIFs enviados pelo seletor
 normal do WhatsApp chegam como vídeo MP4 e também são aceitos. GIF enviado como
-arquivo com MIME `image/gif` é aceito com a mesma legenda.
+arquivo com MIME `image/gif` também é aceito.
 
-- Entrada: MP4/WebM ou GIF, até **10 MiB**, duração entre **0,2 e 10 segundos** e até 8.294.400 pixels por quadro.
-- Trechos acima de 10 segundos são recusados com orientação para recortar; não há corte silencioso.
+- Entrada: MP4/WebM ou GIF, até **10 MiB**, duração de pelo menos **0,2 segundo** e até 8.294.400 pixels por quadro.
+- Vídeos e GIFs maiores usam os primeiros 10 segundos, com aviso.
 - Saída: WebP animado em loop, **512×512**, sem áudio e até **500.000 bytes**.
 - Valida duração real informada pelo ffprobe antes de converter e estrutura/tamanho/duração
   de cada quadro do WebP final. Exige ao menos dois quadros e duração total de até 10 segundos.
-- Tenta sete níveis de compressão, preservando a melhor qualidade que couber: reduz qualidade,
-  taxa de quadros de 12 até 2 fps e resolução interna de 512 até 64 pixels. O canvas final
-  permanece 512×512 e o trecho não é cortado. Em vídeos muito curtos, mantém quadros suficientes
-  para a animação. Se ainda não couber, pede um trecho mais curto. Figurinhas não preservam áudio.
-- Usa uma conversão por vez, uma thread de ffmpeg e timeout de 30 segundos por tentativa.
-  Arquivos temporários são apagados também após falhas. A VM pequena pode demorar.
+- Usa perfis de compressão com `img2webp`, convertendo em série e mantendo a saída no limite. Animações com menos de 10 fps podem ser aceleradas em até 1,5×, com aviso.
+- Mantém timeouts e remove temporários após falhas. A VM pequena pode demorar.
 - Fotos mantêm a conversão estática. Mídia de visualização única continua bloqueada.
 
-Os testes de animação exigem ffmpeg e ffprobe (`brew install ffmpeg` no Mac).
+Os testes de animação exigem ffmpeg, ffprobe e img2webp (`brew install ffmpeg webp` no Mac).
 A imagem Docker já contém os dois.
 
 Referência: [requisitos oficiais do WhatsApp para figurinhas](https://github.com/WhatsApp/stickers/blob/main/Android/README.md)
@@ -211,7 +207,7 @@ Referência: [requisitos oficiais do WhatsApp para figurinhas](https://github.co
 - No comando combinado, a figurinha usa os primeiros 10 segundos, com aviso quando houver recorte.
   O vídeo completo mantém os limites de 16 MiB e 3 minutos. O trecho é preparado localmente,
   sem áudio, e passa pela validação de entrada de 10 MiB e compressão progressiva até 500.000 bytes.
-- O envio direto com `!figurinha`/`!f` continua recusando animações acima de 10 segundos.
+- O envio direto com `!figurinha`/`!f` recorta os primeiros 10 segundos quando necessário e avisa.
 - Uma falha na figurinha após enviar o vídeo é informada separadamente, sem baixar novamente.
 
 Figurinhas animadas de vídeo/GIF (`!figurinha`/`!f` e `!vfigurinha`/`!vf`) preenchem todo o quadrado 512×512, redimensionando largura e altura independentemente, sem corte ou bordas adicionadas. Isso pode deformar as proporções. O vídeo enviado junto pelo comando combinado preserva o formato original.
@@ -235,14 +231,13 @@ Links de emotes `https://cdn.7tv.app/emote/<id>/4x.avif` (também 1x–3x) são 
 
 `!help` mostra a lista de comandos e aliases, exemplos de uso e limites. Disponível somente para números autorizados em conversa privada; usa a mesma fila e proteção contra pedidos repetidos. O texto fica em `src/help.ts`.
 
-`!gf` e `!gifigurinha` também são aceitos como legenda de vídeo/GIF anexado no WhatsApp, incluindo GIFs do seletor GIPHY recebidos como MP4. Anexos mantêm os limites de 10 MiB e 0,2–10 segundos, sem recorte automático. O bot confirma o início antes de baixar/processar o anexo; pedidos por link também têm confirmação de início. Fotos comuns continuam usando `!f`/`!figurinha`.
+`!gf` e `!gifigurinha` também são aceitos como legenda de vídeo/GIF anexado no WhatsApp, incluindo GIFs do seletor GIPHY recebidos como MP4. Anexos mantêm o limite de 10 MiB e usam os primeiros 10 segundos, com aviso. O bot confirma o início antes de baixar/processar o anexo; pedidos por link também têm confirmação de início. Fotos comuns também são convertidas automaticamente.
 
 Comandos iniciados por `!` que não existem recebem orientação para `!help`; comandos conhecidos com formato incorreto recebem instrução de uso específica. Vale para texto e legendas, após autorização, com a mesma fila e deduplicação. Texto comum e mídia de visualização única continuam ignorados. Links válidos em legendas seguem o mesmo processamento dos links em texto.
 
 ## Álbuns de fotos
 
-Selecione até 10 fotos e envie `!f`/`!figurinha` na primeira foto do álbum; a legenda
-pode chegar em qualquer membro. Associação explícita `MEDIA_ALBUM` vincula fotos
+Selecione até 10 fotos e envie o álbum; comandos opcionais continuam aceitos. Associação explícita `MEDIA_ALBUM` vincula fotos
 à conversa autorizada. Nunca herdar comandos por proximidade de horário.
 O coletor espera os itens anunciados ou, sem contagem, 3 segundos de silêncio,
 com prazo máximo de 15 segundos. Guarda no máximo dez referências às fotos;
@@ -251,8 +246,8 @@ O lote ocupa uma das três vagas globais desde a coleta até o fim do processame
 fotos são baixadas e convertidas uma por vez, com limites individuais existentes.
 Falha em uma imagem não impede as demais. Lotes maiores processam as primeiras
 dez, com aviso; mistos convertem só fotos. Lotes incompletos processam o recebido,
-com aviso. Álbuns sem comando são descartados sem conversão.
-Sem metadados de álbum, cada foto precisa de sua própria legenda; essas fotos
+com aviso. Álbuns sem comando também são convertidos.
+Sem metadados de álbum, cada foto é um pedido independente; essas fotos
 não têm o intervalo de 2 segundos, mas continuam sujeitas à fila de três pedidos.
 Fila cheia gera aviso para aguardar e reenviar. `src/photo-batch.ts` trata a coleta
 limitada e o envio sequencial; `src/job-queue.ts` compartilha reservas entre lotes
@@ -411,3 +406,21 @@ o vídeo (3.512.739 bytes, 14,15 segundos) e gerou figurinha de 309.576 bytes, 4
 e 10 segundos. Ordem observada: aviso de contingência → vídeo → aviso de recorte →
 figurinha. Um envio simulado de cada mídia, sem segunda sessão WhatsApp. Temporários
 removidos. Suíte local: 87 testes aprovados. Isso não garante disponibilidade futura.
+
+
+Nos comandos `!vf`/`!vfigurinha`, após enviar o vídeo e antes de iniciar a conversão,
+o bot avisa: “Agora vou criar a figurinha animada. Isso pode levar alguns minutos.”
+Vale para Instagram, Twitter/X e YouTube Shorts. Pedidos somente de vídeo não
+recebem esse aviso. Uma falha no envio do aviso não impede a criação da figurinha.
+
+### Avisos de processamento
+
+Pedidos aceitos recebem confirmação antes de esperar na fila e aviso ao iniciar a etapa de mídia. Álbuns com vínculo reconhecido avisam durante a coleta (até 15s), ao entrar na fila e ao iniciar, e informam o total enviado ao terminar. Sem vínculo reconhecido, as fotos são pedidos individuais; não agrupamos fotos por proximidade de horário. Pedidos recusados por intervalo mínimo recebem orientação explícita para reenviar. Logs de álbum registram apenas contagens e estados, sem identificadores ou conteúdo.
+
+Figurinhas animadas equilibram fluidez e detalhes conforme o perfil escolhido; o resultado continua limitado a 500.000 bytes.
+
+Figurinhas animadas usam `img2webp` e três perfis: `!f` (equilibrada), `!f fluida` e `!f nitida` como legenda de vídeo/GIF. Para links use `!gf fluida <link>` ou `!vf nitida <link>`; todos aceitam também `equilibrada` e `nítida`. Os perfis são prioridades, sujeitos ao limite de 500.000 bytes e ao tempo disponível. Cada conversão tem orçamento total de 180 segundos. Fotos estáticas ignoram o perfil.
+
+Fotos, vídeos e GIFs recebidos automaticamente são convertidos em figurinhas; álbuns associados usam lote e fotos avulsas entram na fila individualmente. Links públicos de Instagram/X/Shorts retornam vídeo; `!f <link>` ou `<link> !f` adiciona uma figurinha. Links diretos de GIF/WebP animado também são convertidos automaticamente. Animações abaixo de 10 fps podem ter sua reprodução acelerada em até 1,5×, sem eliminar quadros, com aviso.
+
+Publicações públicas de imagem do Instagram em `/p/` também são aceitas: caso as tentativas de vídeo não encontrem vídeo e a contingência Snapinsta retorne uma imagem JPEG, PNG ou WebP estático de até 10 MiB, o bot envia a imagem e em seguida uma figurinha. Em publicações com várias mídias retorna apenas a primeira mídia disponível; a contingência envia a URL pública à Snapinsta e depende de sua disponibilidade. Vídeos continuam seguindo o fluxo de vídeo; capas de Reels não são convertidas como foto.

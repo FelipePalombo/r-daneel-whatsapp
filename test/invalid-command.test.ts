@@ -31,3 +31,32 @@ test('texto comum é ignorado e comandos válidos em legendas continuam process�
   const m={key,message:{imageMessage:{caption:'!vf https://x.com/example/status/123'}}};
   assert.equal(requestStatus(m,phone),'vídeo aceito');assert.equal(requestedVideo(m)?.sticker,true);
 });
+
+test('perfis funcionam em anexos e links e rejeitam argumentos incorretos', async () => {
+  const {stickerProfile,isAnimationStickerCommand,parseGifCommand,parseVideoCommand}=await import('../src/request.js');
+  for(const value of ['!f fluida',' !GF NÍTIDA ','!figurinha equilibrada']) assert.equal(isAnimationStickerCommand(value),true);
+  assert.equal(stickerProfile('!f NÍTIDA'),'nitida');
+  assert.equal(stickerProfile('!f'),'equilibrada');
+  assert.equal(isAnimationStickerCommand('!f rapido'),false);
+  assert.equal(parseGifCommand('!gf fluida https://example.com/a.gif'),'https://example.com/a.gif');
+  assert.equal(parseGifCommand('!gf rapido https://example.com/a.gif'),undefined);
+  assert.equal(parseVideoCommand('!vf nitida https://x.com/example/status/123')?.profile,'nitida');
+  assert.equal(parseVideoCommand('!v fluida https://x.com/example/status/123'),undefined);
+});
+
+test('mídias e links automáticos preservam autorização e aceitam !f antes ou depois do link',async()=>{
+  const {requestStatus,parseVideoCommand,parseGifCommand}=await import('../src/request.js');
+  const phone='5511999999999',key={id:'auto',remoteJid:`${phone}@s.whatsapp.net`};
+  for(const message of [{imageMessage:{}},{imageMessage:{caption:'oi'}},{videoMessage:{}},{videoMessage:{gifPlayback:true}}]) {
+    assert.ok(['aceita','animação aceita'].includes(requestStatus({key,message},phone)));
+    assert.equal(requestStatus({key,message},'5511888888888'),'remetente não autorizado');
+    assert.notEqual(requestStatus({key,message:{viewOnceMessage:{message}}},phone),'aceita');
+  }
+  const link='https://x.com/user/status/123';
+  assert.equal(parseVideoCommand(link)?.sticker,false);
+  assert.equal(parseVideoCommand('!f '+link)?.sticker,true);
+  assert.equal(parseVideoCommand(link+' !f')?.sticker,true);
+  assert.equal(parseGifCommand('https://example.com/test.gif'),'https://example.com/test.gif');
+  assert.equal(parseGifCommand('https://example.com/page'),undefined);
+  assert.equal(requestStatus({key,message:{imageMessage:{caption:'!invalido'}}},phone),'comando desconhecido');
+});

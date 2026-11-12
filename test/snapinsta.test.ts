@@ -127,7 +127,59 @@ test('Snapinsta não roda para X nem quando desativado; preserva rate limit', as
 test('v e vf avisam antes do externo e preservam ordem de vídeo e figurinha', async () => {
   for (const sticker of [false, true]) {
     const events: string[] = [];
-    await sendVideoResponse({ url, sticker }, { text: async text => { assert.match(text, /mais um minuto/); events.push('notice'); }, video: async () => { events.push('video'); }, sticker: async () => { events.push('sticker'); } }, async (_url, send, _run, options) => { await options?.onExternalFallback?.(); await send('/tmp/fixture.mp4'); }, async () => ({ sticker: Buffer.from('webp'), trimmed: false }));
-    assert.deepEqual(events, sticker ? ['notice', 'video', 'sticker'] : ['notice', 'video']);
+    await sendVideoResponse({ url, sticker }, { text: async text => { if (text.startsWith('Agora vou criar')) events.push('progress'); else { assert.match(text, /mais um minuto/); events.push('notice'); } }, video: async () => { events.push('video'); }, sticker: async () => { events.push('sticker'); } }, async (_url, send, _run, options) => { await options?.onExternalFallback?.(); await send('/tmp/fixture.mp4'); }, async () => ({ sticker: Buffer.from('webp'), trimmed: false }));
+    assert.deepEqual(events, sticker ? ['notice', 'video', 'progress', 'sticker'] : ['notice', 'video']);
   }
+});
+
+test('publicação de foto: baixa uma imagem válida uma vez e retorna imagem antes da figurinha', async () => {
+  const sharp=(await import('sharp')).default;
+  const {InstagramPhotoAvailable}=await import('../src/snapinsta.js');
+  const photo=await sharp({create:{width:32,height:48,channels:3,background:'red'}}).jpeg().toBuffer();
+  const post='https://www.instagram.com/p/Example123/';
+  const dir=await mkdtemp(join(tmpdir(),'instagram-photo-')); let calls=0;
+  try {
+    await assert.rejects(downloadSnapinsta(post,dir,network(async()=>{
+      if(++calls===1)return reply('<input name="token" value="fresh">');
+      if(calls===2)return reply(response);
+      return reply(photo);
+    })),(error:unknown)=>error instanceof InstagramPhotoAvailable && error.mimetype==='image/jpeg' && error.image.equals(photo));
+    assert.equal(calls,3);
+    const events:string[]=[]; let downloads=0;
+    await sendVideoResponse({url:post,sticker:false},{
+      video:async()=>assert.fail('not video'),
+      image:async(data,mimetype)=>{assert.ok(data.equals(photo));assert.equal(mimetype,'image/jpeg');events.push('image');},
+      text:async()=>{events.push('notice');},sticker:async(data)=>{assert.equal(data.toString('ascii',8,12),'WEBP');events.push('sticker');},
+    },async()=>{downloads++;throw new InstagramPhotoAvailable(photo,'image/jpeg');});
+    assert.equal(downloads,1);assert.deepEqual(events,['image','notice','sticker']);
+    const failures:string[]=[];
+    await sendVideoResponse({url:post,sticker:false},{video:async()=>{},image:async()=>{throw new Error('send failed');},text:async text=>{failures.push(text);},sticker:async()=>assert.fail()},async()=>{throw new InstagramPhotoAvailable(photo,'image/jpeg');});
+    assert.match(failures[0]!,/não consegui enviá-la/);
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('contingência identifica foto sem transformar capa de reel ou arquivos inválidos',async()=>{
+  const sharp=(await import('sharp')).default;
+  const {InstagramPhotoAvailable}=await import('../src/snapinsta.js');
+  const photo=await sharp({create:{width:5,height:5,channels:3,background:'blue'}}).png().toBuffer();
+  const dir=await mkdtemp(join(tmpdir(),'instagram-photo-reel-'));
+  try {
+    let calls=0;
+    await assert.rejects(downloadSnapinsta(url,dir,network(async()=>++calls===1?reply('<input name="token" value="fresh">'):calls===2?reply(response):reply(photo))),error=>!(error instanceof InstagramPhotoAvailable));
+    calls=0;
+    await assert.rejects(downloadSnapinsta('https://www.instagram.com/p/Example123/',dir,network(async()=>++calls===1?reply('<input name="token" value="fresh">'):calls===2?reply(response):reply('<html>fake</html>'))));
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('imagem na contingência percorre a fila de vídeo sem repetir o download e limpa temporários',async()=>{
+  const {InstagramPhotoAvailable}=await import('../src/snapinsta.js');
+  const sharp=(await import('sharp')).default;
+  const photo=await sharp({create:{width:10,height:10,channels:3,background:'green'}}).png().toBuffer();
+  const post='https://www.instagram.com/p/Example123/', events:string[]=[];let dir='';
+  const previous=process.env.COBALT_API_URL;delete process.env.COBALT_API_URL;
+  try {
+    await sendVideoResponse({url:post,sticker:false},{video:async()=>assert.fail(),image:async()=>{events.push('image');},text:async text=>{events.push(text.startsWith('Agora')?'progress':'external');},sticker:async()=>{events.push('sticker');}},
+      async (_url,callback,_run,options)=>withVideo(post,callback,async(_,directory)=>{dir=directory;events.push('video-attempt');throw new Error('no video');},{onExternalFallback:options?.onExternalFallback,externalFallback:async()=>{events.push('photo-download');throw new InstagramPhotoAvailable(photo,'image/png');}}));
+    assert.deepEqual(events,['video-attempt','external','photo-download','image','progress','sticker']);await assert.rejects(access(dir));
+  } finally {if(previous===undefined)delete process.env.COBALT_API_URL;else process.env.COBALT_API_URL=previous;}
 });

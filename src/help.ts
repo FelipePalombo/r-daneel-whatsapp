@@ -1,38 +1,22 @@
-export const HELP_TEXT = `🤖 *R. Daneel — comandos*
+export const HELP_TEXT = `🤖 *R. Daneel — como usar*
 
-🖼️ *Figurinha de foto*
-Envie uma foto com a legenda !figurinha ou !f.
-JPEG, PNG ou WebP estático, até 10 MiB por foto.
+🖼️ *Fotos*
+Envie uma foto para receber uma figurinha. Também aceito álbuns de até 10 fotos; envio uma figurinha por imagem. Se a fila estiver cheia, aviso quais pedidos precisam ser reenviados.
 
-🗂️ *Várias fotos de uma vez*
-Selecione até 10 fotos e coloque !f ou !figurinha na primeira foto do álbum.
-O bot converte uma por vez e devolve uma figurinha por imagem.
-Se o WhatsApp não identificar o álbum, coloque o comando em cada foto; se a fila encher, aguarde e reenvie as restantes.
-Lotes mistos convertem somente fotos; envie vídeos/GIFs separadamente.
+🎞️ *Vídeos e GIFs*
+Envie um vídeo ou GIF para receber uma figurinha animada, sem áudio. Até 10 MiB. Se passar de 10 segundos, uso os primeiros 10 e aviso.
+Para escolher o estilo, use a legenda !f fluida ou !f nitida. Sem legenda, uso o perfil equilibrado.
 
-🎞️ *Figurinha animada*
-Envie vídeo ou GIF com a legenda !figurinha, !f, !gifigurinha ou !gf.
-Até 10 segundos e 10 MiB. Sem áudio.
+🎬 *Links de vídeo*
+Envie um link público do Instagram, Twitter/X ou YouTube Shorts para receber o vídeo (até 3 minutos e 16 MiB). Publicações de imagem do Instagram retornam a imagem e uma figurinha; em carrosséis, apenas a primeira mídia disponível.
+Para receber o vídeo e uma figurinha, envie !f <link> ou <link> !f. Se necessário, a figurinha usa os primeiros 10 segundos.
 
-🎬 *Baixar vídeo*
-!video <link> ou !v <link>
-Instagram, Twitter/X e YouTube Shorts: até 3 minutos e 16 MiB.
-Enviar só o link também funciona. YouTube: use youtube.com/shorts/<id>. Retorna um vídeo por publicação.
+🌐 *Links de animação*
+Envie um link direto HTTPS de GIF ou WebP animado para receber uma figurinha. Emotes AVIF do 7TV também são aceitos. Páginas do Tenor/Giphy e outros AVIF não são suportados.
 
-✨ *Vídeo + figurinha*
-!vfigurinha <link> ou !vf <link>
-Envia o vídeo completo e a figurinha dos primeiros 10 segundos.
+⏩ Animações com poucos quadros por segundo podem ser aceleradas em até 1,5×; aviso quando isso acontecer.
 
-🌐 *GIF da internet para figurinha*
-!gifigurinha <link> ou !gf <link>
-Link direto HTTPS de GIF/WebP animado, até 10 MiB.
-Aceita links do Discord e emotes AVIF do 7TV (busca a versão WebP).
-Usa os primeiros 10 segundos e avisa quando houver recorte.
-Páginas do Tenor/Giphy e AVIF de outros serviços não são suportados.
-
-📐 Animações preenchem o quadrado, sem cortes, podendo deformar as proporções. A qualidade é reduzida se necessário para caber em 500 KB; nem toda mídia pode ser convertida.
-
-📌 Links precisam ser públicos, sem login. Stories não são suportados; downloads podem falhar por bloqueios das plataformas.
-🔒 Somente números autorizados, em conversa privada.
+Os comandos anteriores continuam disponíveis: !figurinha / !f, !gifigurinha / !gf <link>, !video / !v <link> e !vfigurinha / !vf <link>. Perfis também funcionam em !gf fluida <link> e !vf nitida <link>.
+Links devem ser públicos e downloads podem falhar por bloqueios das plataformas. Acesso apenas para números autorizados em conversas privadas.
 
 ❓ !help — mostrar esta lista.`;

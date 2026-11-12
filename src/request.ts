@@ -1,5 +1,6 @@
 import { directAnimationUrl } from './gif-download.js';
 import { videoUrl } from './video.js';
+import type { StickerProfile } from './animated-sticker.js';
 import type { WAMessage } from '@whiskeysockets/baileys';
 
 /** WhatsApp pode representar celulares brasileiros pelo número anterior ao nono dígito. */
@@ -43,8 +44,8 @@ export function requestStatus(m: WAMessage, allowedPhone: string | readonly stri
   const animation = content?.videoMessage ??
     (content?.documentMessage?.mimetype === 'image/gif' ? content.documentMessage : undefined) ??
     (content?.imageMessage?.mimetype === 'image/gif' ? content.imageMessage : undefined);
-  if (animation && isAnimationStickerCommand(animation.caption)) return 'animação aceita';
-  if (!animation && content?.imageMessage && isStickerCommand(content.imageMessage.caption)) return 'aceita';
+  if (animation && (isAnimationStickerCommand(animation.caption) || !(animation.caption ?? '').trim().startsWith('!'))) return 'animação aceita';
+  if (!animation && content?.imageMessage && (isStickerCommand(content.imageMessage.caption) || !(content.imageMessage.caption ?? '').trim().startsWith('!'))) return 'aceita';
   const text = messageText(m);
   if (text.trim().toLowerCase() === '!help') return 'ajuda aceita';
   if (parseGifCommand(text)) return 'gif por link aceito';
@@ -74,20 +75,29 @@ export async function readBounded(stream: AsyncIterable<Uint8Array>, limit: numb
 }
 
 export function isStickerCommand(text?: string | null): boolean {
-  return /^!(?:figurinha|f)$/i.test(text?.trim() ?? '');
+  return /^!(?:figurinha|f)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(text?.trim() ?? '');
 }
 
 /** !gf também funciona como legenda de vídeo/GIF, sem exigir link. */
 export function isAnimationStickerCommand(text?: string | null): boolean {
-  return isStickerCommand(text) || /^!(?:gifigurinha|gf)$/i.test(text?.trim() ?? '');
+  return isStickerCommand(text) || /^!(?:gifigurinha|gf)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(text?.trim() ?? '');
 }
 
-export type VideoCommand = { url: string; sticker: boolean };
+export function stickerProfile(text: string): StickerProfile {
+  const value = text.trim().split(/\s+/)[1]?.toLowerCase();
+  return value === 'fluida' ? 'fluida' : value === 'nitida' || value === 'nítida' ? 'nitida' : 'equilibrada';
+}
+export type VideoCommand = { url: string; sticker: boolean; profile?: StickerProfile };
 export function parseVideoCommand(text: string): VideoCommand | undefined {
+  const combined = /^(?:!f(?:igurinha)?\s+(https:\/\/\S+)|(https:\/\/\S+)\s+!f(?:igurinha)?)$/i.exec(text.trim());
+  if (combined) { const url = videoUrl(combined[1] ?? combined[2]!); if (url) return {url, sticker:true}; }
   const match = /^!(video|v|vfigurinha|vf)\s+(.+)$/is.exec(text.trim());
-  const url = videoUrl(match ? match[2]! : text);
+  const sticker = !!match && ['vfigurinha', 'vf'].includes(match[1]!.toLowerCase());
+  const args = match ? match[2]! : text;
+  const profileMatch = sticker ? /^(fluida|nitida|nítida|equilibrada)\s+(\S+)$/i.exec(args) : null;
+  const url = videoUrl(profileMatch ? profileMatch[2]! : args);
   if (!url) return;
-  return { url, sticker: !!match && ['vfigurinha', 'vf'].includes(match[1]!.toLowerCase()) };
+  return profileMatch ? {url, sticker, profile: stickerProfile('!f '+profileMatch[1])} : {url, sticker};
 }
 
 export function messageText(m: WAMessage): string {
@@ -100,8 +110,14 @@ export function requestedVideo(m: WAMessage): VideoCommand | undefined {
   return parseVideoCommand(messageText(m));
 }
 export function parseGifCommand(text:string): string | undefined {
-  const match=/^!(?:gifigurinha|gf)\s+(\S+)$/i.exec(text.trim());
-  return match ? directAnimationUrl(match[1]!)?.href : undefined;
+  const match=/^!(?:gifigurinha|gf)\s+(?:(?:fluida|nitida|nítida|equilibrada)\s+)?(\S+)$/i.exec(text.trim());
+  if (match) return directAnimationUrl(match[1]!)?.href;
+  if (videoUrl(text.trim())) return;
+  const url = directAnimationUrl(text.trim());
+  if (!url) return;
+  const original = text.trim().toLowerCase();
+  if (/\.(?:gif|webp)(?:[?#]|$)/i.test(original) || url.searchParams.get('format')?.toLowerCase() === 'webp' || /^https:\/\/cdn\.7tv\.app\/emote\//i.test(original)) return url.href;
+  return undefined;
 }
 
 /** Orientação para comandos conhecidos sem repetir o conteúdo enviado pelo usuário. */
@@ -109,10 +125,10 @@ export function commandUsage(text: string): string | undefined {
   const name = text.trim().split(/\s+/, 1)[0]?.toLowerCase();
   switch (name) {
     case '!help': return 'Use !help, sem argumentos, para listar os comandos.';
-    case '!figurinha': case '!f': return 'Envie uma foto, vídeo ou GIF com a legenda !figurinha ou !f. Vídeos e GIFs devem ter até 10 segundos e 10 MiB.';
+    case '!figurinha': case '!f': return 'Envie uma foto, vídeo ou GIF com a legenda !figurinha ou !f. Vídeos e GIFs podem ter até 10 MiB; uso os primeiros 10 segundos.';
     case '!video': case '!v': return 'Use !video <link> ou !v <link de publicação pública do Instagram, Twitter/X ou YouTube Shorts>.';
     case '!vfigurinha': case '!vf': return 'Use !vfigurinha <link> ou !vf <link de publicação pública do Instagram, Twitter/X ou YouTube Shorts> para receber o vídeo e a figurinha.';
-    case '!gifigurinha': case '!gf': return 'Use !gf <link HTTPS direto de GIF/WebP animado>, ou envie vídeo/GIF com a legenda !gf (até 10 segundos e 10 MiB).';
+    case '!gifigurinha': case '!gf': return 'Use !gf <link HTTPS direto de GIF/WebP animado>, ou envie vídeo/GIF com a legenda !gf (até 10 MiB; uso os primeiros 10 segundos).';
   }
 }
 export function invalidCommandReply(m: WAMessage): string {

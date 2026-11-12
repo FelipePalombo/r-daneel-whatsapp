@@ -27,6 +27,7 @@ type Album = {
   seen: Set<string>;
   photoCount: number;
   command: boolean;
+  notice?: Promise<void>;
   mixed: boolean;
   expected?: number;
   expectedImages?: number;
@@ -69,7 +70,8 @@ export class PhotoAlbumCollector {
   private stopped = false;
   constructor(private readonly allowed: readonly string[], private readonly queue: JobQueue,
     private readonly ready: (batch: PhotoBatch) => Promise<void>, private readonly busy: (message: WAMessage) => void,
-    private readonly time: AlbumClock = clock) {}
+    private readonly time: AlbumClock = clock,
+    private readonly notify: (message: WAMessage, text: string) => Promise<void> = async () => {}) {}
   get collecting(): number { return this.albums.size; }
 
   /** true: mensagem pertence ao coletor. false: continuar no fluxo individual. */
@@ -79,8 +81,8 @@ export class PhotoAlbumCollector {
     if (!descriptor) return false;
     const content = messageContent(message)!;
     const photo = content.imageMessage && content.imageMessage.mimetype !== 'image/gif';
-    const command = !!photo && isStickerCommand(content.imageMessage?.caption);
-    const independent = !descriptor.header && messageText(message).trim().startsWith('!') && !command;
+    const command = !!photo && (isStickerCommand(content.imageMessage?.caption) || !(content.imageMessage?.caption ?? '').trim().startsWith('!'));
+    const independent = !descriptor.header && (!photo || (messageText(message).trim().startsWith('!') && !command));
     const key = `${message.key.remoteJid}:${descriptor.id}`;
     for (const [id, value] of this.recent) if (this.time.now() - value.at > 600_000) this.recent.delete(id);
     const closed = this.recent.get(key);
@@ -114,6 +116,10 @@ export class PhotoAlbumCollector {
       album.seen.add(message.key.id!);
       if (photo && !independent) {
         album.photoCount++;
+        if (command && !album.command) {
+          album.notice = this.notify(message, 'Recebi o álbum. Estou reunindo as fotos (até 15 segundos). Depois vou criar uma figurinha por foto; se houver pedidos em andamento, o lote aguardará na fila. Não precisa reenviar.').catch(() => {});
+          console.log('Álbum: coleta iniciada.');
+        }
         album.command ||= command;
         const entry = { message, index: descriptor.index, order: album.seen.size };
         album.photos.push(entry);
@@ -144,7 +150,9 @@ export class PhotoAlbumCollector {
     if (!album.command || !photos.length) { album.reservation.cancel(); return; }
     const batch = { photos, mixed: album.mixed, incomplete: album.expected !== undefined && album.seen.size < album.expected,
       overLimit: album.photoCount > MAX_BATCH_PHOTOS || (album.expectedImages ?? 0) > MAX_BATCH_PHOTOS };
-    album.reservation.submit(() => this.ready(batch));
+    console.log(`Álbum: ${photos.length} fotos prontas; incompleto=${batch.incomplete}; limite=${batch.overLimit}.`);
+    const waiting = (album.notice ?? Promise.resolve()).then(() => this.notify(photos[0]!, `Lote recebido: ${photos.length} foto(s). Está na fila para processamento. Não precisa reenviar.`)).catch(() => {});
+    album.reservation.submit(async () => { await album.notice; await waiting; await this.ready(batch); });
   }
   close() {
     this.stopped = true;
@@ -170,5 +178,5 @@ export async function sendPhotoBatch(batch: PhotoBatch, send: {
     try { await send.sticker(await prepare(original), original); sent++; }
     catch { await send.text(`Não consegui converter ou enviar a foto ${index + 1} do lote. Vou continuar com as demais.`).catch(() => {}); }
   }
-  if (sent < batch.photos.length) await send.text(`Lote concluído: ${sent} de ${batch.photos.length} figurinhas enviadas.`);
+  await send.text(`Lote concluído: ${sent} de ${batch.photos.length} figurinhas enviadas.`);
 }

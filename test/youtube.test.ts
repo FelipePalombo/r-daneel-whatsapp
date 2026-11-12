@@ -158,8 +158,8 @@ test('YouTube: ordem de contingência, erro de envio e isolamento dos provedores
 test('Shorts vf: download único, vídeo antes do recorte e figurinha; falha parcial específica', async () => {
   for (const fail of [false, true]) {
     const events: string[] = []; let calls = 0;
-    await sendVideoResponse({ url, sticker: true }, { video: async () => { events.push('video'); }, sticker: async () => { events.push('sticker'); }, text: async text => { events.push(text.includes('primeiros') ? 'trim' : 'partial'); } },
+    await sendVideoResponse({ url, sticker: true }, { video: async () => { events.push('video'); }, sticker: async () => { events.push('sticker'); }, text: async text => { events.push(text.startsWith('Agora vou criar') ? 'progress' : text.includes('primeiros') ? 'trim' : 'partial'); } },
       async (_url, send) => { calls++; await send('/tmp/fixture.mp4'); }, async () => { if (fail) throw new Error('convert'); return { sticker: fixture, trimmed: true }; });
-    assert.equal(calls, 1); assert.deepEqual(events, fail ? ['video', 'partial'] : ['video', 'trim', 'sticker']);
+    assert.equal(calls, 1); assert.deepEqual(events, fail ? ['video', 'progress', 'partial'] : ['video', 'progress', 'trim', 'sticker']);
   }
 });

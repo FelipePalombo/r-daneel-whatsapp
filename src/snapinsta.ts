@@ -1,9 +1,13 @@
+import sharp from 'sharp';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { publicHttp, type PublicHttp } from './public-http.js';
 
 const HOME = 'https://snapinsta.ai/';
 const MAX_TEXT = 1024 * 1024;
+export class InstagramPhotoAvailable extends Error {
+  constructor(readonly image: Buffer, readonly mimetype: 'image/jpeg' | 'image/png' | 'image/webp') { super('Publicação contém imagem.'); }
+}
 export const EXTERNAL_VIDEO_TIMEOUT_MS = 60_000;
 const headers = { 'User-Agent': 'Mozilla/5.0', Referer: HOME };
 const entities = (value: string) => value.replace(/&(amp|quot|apos|lt|gt|#\d+|#x[\da-f]+);/gi, (_, name: string) => {
@@ -74,7 +78,14 @@ export async function downloadSnapinsta(url: string, directory: string, io?: Pub
     body: snapinstaForm(home.body.toString('utf8'), url) }, io);
   const media = snapinstaMedia(result.body.toString('utf8'));
   const video = await publicHttp(media, { signal, limit: 16 * 1024 * 1024, allowedHost: host => host === 'd.rapidcdn.app', headers }, io);
-  if (video.body.length < 12 || video.body.toString('ascii', 4, 8) !== 'ftyp') throw new Error('Serviço externo não retornou MP4.');
+  if (video.body.length < 12 || video.body.toString('ascii', 4, 8) !== 'ftyp') {
+    // Só links de publicação aceitam imagem; nunca convertem a capa de um Reel.
+    if (!new URL(url).pathname.startsWith('/p/') || video.body.length > 10 * 1024 * 1024) throw new Error('Serviço externo não retornou mídia compatível.');
+    const info = await sharp(video.body, {limitInputPixels:25_000_000, failOn:'error'}).timeout({seconds:10}).metadata();
+    const mime = info.format === 'jpeg' ? 'image/jpeg' : info.format === 'png' ? 'image/png' : info.format === 'webp' ? 'image/webp' : undefined;
+    if (!mime || (info.pages ?? 1) !== 1 || !info.width || !info.height || info.width * info.height > 25_000_000) throw new Error('Imagem incompatível.');
+    throw new InstagramPhotoAvailable(video.body, mime);
+  }
   signal.throwIfAborted();
   await writeFile(join(directory, 'video.mp4'), video.body, { signal });
 }

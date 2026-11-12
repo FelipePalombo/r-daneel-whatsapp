@@ -64,8 +64,8 @@ test('vf e v compartilham o aviso de retentativa e enviam vídeo somente após s
   for(const sticker of [false,true]) {
     const events:string[]=[];
     await sendVideoResponse({url,sticker},{
-      video:async()=>{events.push('video');},sticker:async()=>{events.push('sticker');},text:async text=>{assert.ok(text.includes('Instagram'));events.push('retry');},
+      video:async()=>{events.push('video');},sticker:async()=>{events.push('sticker');},text:async text=>{if(text.startsWith('Agora vou criar'))events.push('progress');else{assert.ok(text.includes('Instagram'));events.push('retry');}},
     },async(_url,send,_run,options)=>{await options?.onRetry?.();await send('/tmp/fixture.mp4');},async()=>({sticker:Buffer.from('webp'),trimmed:false}));
-    assert.deepEqual(events,sticker?['retry','video','sticker']:['retry','video']);
+    assert.deepEqual(events,sticker?['retry','video','progress','sticker']:['retry','video']);
   }
 });

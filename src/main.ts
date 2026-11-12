@@ -2,9 +2,9 @@ import { mkdir } from 'node:fs/promises';
 import makeWASocket, { DisconnectReason, downloadMediaMessage, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { createAnimatedSticker, AnimatedStickerError } from './animated-sticker.js';
+import { createDirectAnimatedSticker, AnimatedStickerError, accelerateSticker } from './animated-sticker.js';
 import { createSticker, MAX_INPUT_BYTES } from './sticker.js';
-import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply } from './request.js';
+import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply, stickerProfile } from './request.js';
 import { videoFailureReply } from './video.js';
 import { sendVideoResponse } from './video-response.js';
 import { HELP_TEXT } from './help.js';
@@ -31,13 +31,9 @@ const jobs = new JobQueue(3, () => console.error('Falha no processamento.'));
 const seen = new Map<string, number>();
 let lastRequest = 0;
 
-const lastBusyNotice = new Map<string, number>();
 function reportBusy(message: import('@whiskeysockets/baileys').WAMessage) {
   const jid = message.key.remoteJid!;
-  const now = Date.now();
-  if (now - (lastBusyNotice.get(jid) ?? 0) < 10_000) return;
-  lastBusyNotice.set(jid, now);
-  void socket.sendMessage(jid, { text: 'A fila está cheia. Aguarde os pedidos atuais terminarem e envie novamente.' }).catch(() => {});
+  void socket.sendMessage(jid, { text: 'A fila está cheia. Este pedido não entrou: aguarde os atuais terminarem e envie novamente.' }, { quoted: message }).catch(() => {});
 }
 const albums = new PhotoAlbumCollector(allowedNumbers, jobs, async batch => {
   if (stopping) return;
@@ -51,7 +47,7 @@ const albums = new PhotoAlbumCollector(allowedNumbers, jobs, async batch => {
     });
     return createSticker(await readBounded(stream, MAX_INPUT_BYTES));
   });
-}, reportBusy);
+}, reportBusy, undefined, async (message, text) => { await socket.sendMessage(message.key.remoteJid!, { text }, { quoted: message }); });
 
 function connect() {
   const current = makeWASocket({ auth: state, logger, syncFullHistory: false, markOnlineOnConnect: false });
@@ -97,13 +93,20 @@ function connect() {
       if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido', 'gif por link aceito', 'comando de gif inválido', 'ajuda aceita', 'comando em formato inválido', 'comando desconhecido'].includes(status)) continue;
       // Fotos avulsas com comando próprio podem chegar juntas sem o intervalo de 2s.
       if (status !== 'aceita' && now - lastRequest < 2000) {
-        console.log('Pedido ignorado: intervalo mínimo.'); continue;
+        console.log('Pedido ignorado: intervalo mínimo.');
+        void current.sendMessage(message.key.remoteJid!, { text: 'Recebi pedidos muito próximos. Aguarde 2 segundos e reenvie este comando; ele não entrou na fila.' }, { quoted: message }).catch(() => {});
+        continue;
       }
       const reservation = jobs.reserve();
       if (!reservation) { reportBusy(message); continue; }
       seen.set(key, now);
       if (status !== 'aceita') lastRequest = now;
+      const jid = message.key.remoteJid!;
+      const queued = current.sendMessage(jid, { text: jobs.pending > 1
+        ? 'Pedido recebido e colocado na fila. Vou avisar quando começar. Não precisa reenviar.'
+        : 'Pedido recebido. Vou iniciar o processamento.' }, { quoted: message }).catch(() => {});
       reservation.submit(async () => {
+        await queued;
         if (stopping) return;
         const jid = message.key.remoteJid!;
         if (status === 'ajuda aceita') {
@@ -122,7 +125,7 @@ function connect() {
             await sendGifResponse(gifUrl, {
               sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated:true, width:512, height:512 }, { quoted:message }); },
               text: async text => { await current.sendMessage(jid, { text }); },
-            });
+            }, undefined, undefined, stickerProfile(messageText(message)));
             console.log('Figurinha de link enviada.');
             return;
           }
@@ -130,24 +133,32 @@ function connect() {
             await current.sendMessage(jid, { text: 'Vou buscar o vídeo. Pode levar alguns minutos.' });
             await sendVideoResponse(videoRequest, {
               video: async (path, link) => { await current.sendMessage(jid, { video: { url: path }, mimetype: 'video/mp4', caption: link }, { quoted: message }); },
+              image: async (image, mimetype) => { await current.sendMessage(jid, { image, mimetype }, { quoted: message }); },
               sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated: true, width: 512, height: 512 }, { quoted: message }); },
               text: async text => { await current.sendMessage(jid, { text }); },
             });
             console.log('Vídeo enviado.');
             return;
           }
+          if (status === 'aceita') await current.sendMessage(jid, { text: 'Vou criar a figurinha desta foto.' }).catch(() => {});
           if (status === 'animação aceita') await current.sendMessage(jid, { text: 'Vou preparar a figurinha animada. Isso pode levar alguns minutos.' });
           const stream = await downloadMediaMessage(message, 'stream', { options: { signal: AbortSignal.timeout(30_000) } }, {
             logger, reuploadRequest: current.updateMediaMessage
           });
           const input = await readBounded(stream, MAX_INPUT_BYTES);
-          const sticker = status === 'animação aceita' ? await createAnimatedSticker(input) : await createSticker(input);
+          let sticker: Buffer;
+          if (status === 'animação aceita') {
+            const converted = await createDirectAnimatedSticker(input, stickerProfile(messageText(message)));
+            if (converted.trimmed) await current.sendMessage(jid, { text: 'Para a figurinha, usei os primeiros 10 segundos do vídeo ou GIF.' }).catch(() => {});
+            const result = accelerateSticker(converted.sticker); sticker = result.sticker;
+            if (result.accelerated) await current.sendMessage(jid, { text: 'Acelerei a figurinha para deixar a animação mais fluida.' }).catch(() => {});
+          } else sticker = await createSticker(input);
           await current.sendMessage(jid, { sticker, isAnimated: status === 'animação aceita', width: 512, height: 512 }, { quoted: message });
           console.log('Figurinha enviada.');
         } catch (error) {
           if (url && error instanceof Error) console.error(error.message);
           console.error(url ? 'Não foi possível concluir o vídeo.' : 'Não foi possível concluir uma figurinha.');
-          await current.sendMessage(jid, { text: error instanceof AnimatedStickerError ? error.message : url ? videoFailureReply(error, url) : 'Não consegui preparar essa figurinha. Envie foto, vídeo ou GIF de até 10 MB com a legenda !figurinha. Vídeos e GIFs devem ter até 10 segundos.' }).catch(() => {});
+          await current.sendMessage(jid, { text: error instanceof AnimatedStickerError ? error.message : url ? videoFailureReply(error, url) : 'Não consegui preparar essa figurinha. Envie foto, vídeo ou GIF de até 10 MB com a legenda !figurinha. Vídeos e GIFs longos usam os primeiros 10 segundos.' }).catch(() => {});
         }
       });
     }

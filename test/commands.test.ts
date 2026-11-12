@@ -37,15 +37,15 @@ test('um download, ordem dos envios, falhas parciais e limpeza', async () => {
     const promise=sendVideoResponse({url,sticker:scenario!=='video-only'}, {
       video:async path=>{ await access(path); events.push('video'); if(scenario==='video-fail') throw new Error('send'); },
       sticker:async()=>{events.push('sticker');if(scenario==='sticker-fail') throw new Error('send');},
-      text:async text=>{events.push(text.includes('primeiros')?'trim':'error');},
+      text:async text=>{events.push(text.startsWith('Agora vou criar')?'progress':text.includes('primeiros')?'trim':'error');},
     }, (link,send)=>withVideo(link,send,async(_,dir)=>{
       downloads++;directory=dir;await writeFile(join(dir,'video.mp4'),'fixture');
     }), async path=>{await access(path);events.push('convert');if(scenario==='convert-fail')throw new Error('convert');return {sticker:Buffer.from('webp'),trimmed:true};});
     if(scenario==='video-fail')await assert.rejects(promise);else await promise;
     assert.equal(downloads,1);
-    assert.deepEqual(events, scenario==='ok'?['video','convert','trim','sticker']:
-      scenario==='convert-fail'?['video','convert','error']:
-      scenario==='sticker-fail'?['video','convert','trim','sticker','error']:['video']);
+    assert.deepEqual(events, scenario==='ok'?['video','progress','convert','trim','sticker']:
+      scenario==='convert-fail'?['video','progress','convert','error']:
+      scenario==='sticker-fail'?['video','progress','convert','trim','sticker','error']:['video']);
     await assert.rejects(access(directory));
   }
 });
@@ -60,10 +60,23 @@ test('conversão local de link: vídeo curto inteiro e primeiros 10 segundos de 
       const result=await createLinkedVideoSticker(source);
       const meta=validateAnimatedSticker(result.sticker);
       assert.equal(result.trimmed,duration>10);
-      assert.ok(meta.durationMs>=Math.min(duration,10)*1000-100);
+      assert.ok(meta.durationMs>=Math.ceil(Math.min(duration,10)*1000/1.5)-100);
+      assert.equal(result.accelerated,true);
       assert.ok(meta.durationMs<=10000);
       assert.ok((await readFile(source)).length>0);
     }
     await assert.rejects(createLinkedVideoSticker(join(dir,'missing.mp4')));
   } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+
+test('falha no aviso de criação não impede conversão nem repete download', async () => {
+  const events: string[] = []; let downloads = 0;
+  await sendVideoResponse({ url, sticker: true }, {
+    video: async () => { events.push('video'); },
+    text: async () => { events.push('notice'); throw new Error('notice failed'); },
+    sticker: async () => { events.push('sticker'); },
+  }, async (_url, send) => { downloads++; await send('/tmp/fixture.mp4'); },
+  async () => { events.push('convert'); return { sticker: Buffer.from('webp'), trimmed: false }; });
+  assert.equal(downloads, 1); assert.deepEqual(events, ['video', 'notice', 'convert', 'sticker']);
 });

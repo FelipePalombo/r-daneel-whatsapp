@@ -19,7 +19,8 @@ function animation(format:'gif'|'webp',delay=100,frames=3,width=24,height=12) {
 test('comandos gf, aliases, autorização e mensagens embrulhadas',()=>{
   const url='https://example.com/path/4x.avif?format=webp';
   for(const command of ['!gf','!GIFIGURINHA'])assert.equal(parseGifCommand(` ${command} ${url} `),url);
-  for(const value of ['!gf','!gf errado',`!gf ${url} extra`,url,'!gfoo '+url])assert.equal(parseGifCommand(value),undefined);
+  for(const value of ['!gf','!gf errado',`!gf ${url} extra`,'!gfoo '+url])assert.equal(parseGifCommand(value),undefined);
+  assert.equal(parseGifCommand(url),url);
   const phone='5511999999999',key={id:'gif',remoteJid:`${phone}@s.whatsapp.net`};
   const message={key,message:{ephemeralMessage:{message:{conversation:`!gf ${url}`}}}};
   assert.equal(requestStatus(message,phone),'gif por link aceito');
@@ -64,8 +65,8 @@ test('bloqueia DNS privado e valida novamente cada redirecionamento',async()=>{
   await assert.rejects(downloadAnimation('https://example.com/a',{resolve:async()=>{throw new Error('DNS');},get:privateDns.io.get}),/baixar/);
 });
 test('GIF e WebP preservam movimento, transparência, tamanho e duração',async()=>{
-  for(const format of ['gif','webp'] as const) {
-    const result=await createGifSticker(await animation(format));
+  for(const format of ['gif','webp'] as const) for(const profile of ['equilibrada','fluida','nitida'] as const) {
+    const result=await createGifSticker(await animation(format),profile);
     assert.equal(result.trimmed,false);
     const meta=validateAnimatedSticker(result.sticker);assert.ok(meta.frames>=2);
     const {data,info}=await sharp(result.sticker,{animated:true}).ensureAlpha().raw().toBuffer({resolveWithObject:true});

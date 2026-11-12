@@ -32,9 +32,11 @@ test('converte MP4 e GIF em WebP animado válido e realmente com movimento', asy
   });
 });
 
-test('aceita limite de 10 segundos e recusa acima sem cortar silenciosamente', async () => {
+test('recorta vídeos e GIFs maiores que 10 segundos e informa quando recortou', async () => {
+  const {createDirectAnimatedSticker}=await import('../src/animated-sticker.js');
   await fixture(10,false,async input=> { assert.ok(validateAnimatedSticker(await createAnimatedSticker(input)).durationMs<=10000); });
-  await fixture(10.2,false,async input=> { await assert.rejects(createAnimatedSticker(input),/passa de 10 segundos/); });
+  for(const gif of [false,true]) await fixture(10.2,gif,async input=> { const result=await createDirectAnimatedSticker(input); assert.equal(result.trimmed,true); assert.ok(validateAnimatedSticker(result.sticker).durationMs<=10000); });
+  await fixture(1,false,async input=>assert.equal((await createDirectAnimatedSticker(input)).trimmed,false));
 });
 
 test('recusa mídia inválida e grande e WebP final adulterado', async () => {
@@ -61,7 +63,7 @@ test('vídeo e GIF exigem legenda e autorização e não permitem visualização
     assert.equal(requestStatus({key,message:content},'5511888888888'),'remetente não autorizado');
     assert.notEqual(requestStatus({key,message:{viewOnceMessage:{message:content}}},phone),'animação aceita');
   }
-  assert.equal(requestStatus({key,message:{videoMessage:{caption:'oi'}}},phone),'mídia sem legenda !figurinha');
+  assert.equal(requestStatus({key,message:{videoMessage:{caption:'oi'}}},phone),'animação aceita');
 });
 
 
@@ -115,4 +117,34 @@ test('gf na legenda aceita GIF do seletor como MP4 e GIF como arquivo, sem liber
   assert.equal(requestStatus({key,message:{conversation:'!gf'}},phone),'comando de gif inválido');
   assert.notEqual(requestStatus({key,message:{imageMessage:{caption:'!gf',mimetype:'image/jpeg'}}},phone),'aceita');
   assert.notEqual(requestStatus({key,message:{videoMessage:{caption:'!gfoo'}}},phone),'animação aceita');
+});
+
+test('perfil fluido mantém mais quadros que o equilibrado em vídeo curto', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'daneel-fluid-test-'));
+  try {
+    const path=join(dir,'short.mp4');
+    await exec('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=size=128x128:rate=24:duration=1',
+      '-threads','1','-c:v','libx264','-pix_fmt','yuv420p',path],{timeout:15000});
+    const input=await readFile(path);
+    const sticker=await createAnimatedSticker(input,'fluida');
+    const info=validateAnimatedSticker(sticker);
+    const balanced=validateAnimatedSticker(await createAnimatedSticker(input));
+    assert.ok(info.frames>balanced.frames, `quadros: ${info.frames}`);
+    assert.ok(info.durationMs>=900 && info.durationMs<=1000);
+    assert.ok(sticker.length<=MAX_ANIMATED_STICKER_BYTES);
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('aceleração preserva quadros, respeita limite e mantém animação rápida intacta', async () => {
+  const {accelerateSticker}=await import('../src/animated-sticker.js');
+  await fixture(2,false,async input=>{
+    const original=await createAnimatedSticker(input);
+    const before=validateAnimatedSticker(original), result=accelerateSticker(original), after=validateAnimatedSticker(result.sticker);
+    assert.equal(result.accelerated,true);assert.equal(after.frames,before.frames);
+    assert.ok(after.durationMs>=Math.ceil(before.durationMs/1.5));
+    assert.ok(after.durationMs<before.durationMs);
+    assert.equal(validateAnimatedSticker(original).durationMs,before.durationMs);
+    const fast=await createAnimatedSticker(input,'fluida');
+    assert.equal(accelerateSticker(fast).accelerated,false);
+  });
 });

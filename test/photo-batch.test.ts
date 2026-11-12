@@ -93,13 +93,13 @@ test('sem contagem usa silêncio de 3s e ordem de chegada; cabeçalho posterior 
   clock.advance(12000);await queue.idle;assert.equal(batches[1]!.incomplete,true);assert.equal(queue.pending,0);
 });
 
-test('prazo máximo de 15s não é renovado e álbuns sem comando não baixam nem convertem',async()=>{
+test('prazo máximo de 15s não é renovado e álbuns sem comando são convertidos',async()=>{
   const {queue,clock,batches,collector}=setup();
   collector.offer(image('start','stream','!f'));
   for(let i=1;i<=7;i++){clock.advance(2000);collector.offer(image(`stream-${i}`,'stream'));}
   clock.advance(1000);await queue.idle;assert.equal(batches.length,1);assert.equal(collector.collecting,0);
   collector.offer(header('ignored',2));collector.offer(image('n1','ignored'));collector.offer(image('n2','ignored'));
-  await queue.idle;assert.equal(batches.length,1);assert.equal(queue.pending,0);assert.equal(clock.tasks.size,0);
+  await queue.idle;assert.equal(batches.length,2);assert.equal(queue.pending,0);assert.equal(clock.tasks.size,0);
 });
 
 test('lotes mistos só compartilham comando entre fotos, sem absorver comandos individuais',async()=>{
@@ -108,10 +108,10 @@ test('lotes mistos só compartilham comando entre fotos, sem absorver comandos i
   await queue.idle;assert.equal(batches[0]!.mixed,true);assert.deepEqual(batches[0]!.photos.map(m=>m.key.id),['a','b']);
   collector.offer(header('explicit',1,1));collector.offer(image('plain','explicit'));
   assert.equal(collector.offer(video('video-command','explicit','!f')),false);
-  await queue.idle;assert.equal(batches.length,1);
+  await queue.idle;assert.equal(batches.length,2);
   collector.offer(header('other-command',2));collector.offer(image('yes','other-command','!f'));
   assert.equal(collector.offer(image('other','other-command','!vf https://x.com/test/status/123')),false);
-  await queue.idle;assert.deepEqual(batches[1]!.photos.map(m=>m.key.id),['yes']);
+  await queue.idle;assert.deepEqual(batches[2]!.photos.map(m=>m.key.id),['yes']);
 });
 
 test('álbuns e conversas ficam isolados e mídia de visualização única nunca entra',async()=>{
@@ -119,7 +119,7 @@ test('álbuns e conversas ficam isolados e mídia de visualização única nunca
   const {queue,clock,batches,collector}=setup([phone,other]);
   collector.offer(header('same',1));collector.offer(header('same',1,0,otherJid));
   collector.offer(image('mine','same','!f'));collector.offer(image('theirs','same','',undefined,otherJid));await queue.idle;
-  assert.equal(batches.length,1);assert.equal(batches[0]!.photos[0]!.key.remoteJid,jid);
+  assert.equal(batches.length,2);assert.equal(batches[0]!.photos[0]!.key.remoteJid,jid);assert.equal(batches[1]!.photos[0]!.key.remoteJid,otherJid);
   const valid=image('secret','private','!f');
   for(const m of [
     {...valid,key:{...valid.key,remoteJid:'5511777777777@s.whatsapp.net'}},
@@ -150,7 +150,7 @@ test('sem associação não há herança; aceita wrapper de álbum e descarta re
   const plain=image('solo','missing','!f');delete plain.message!.messageContextInfo;
   assert.equal(collector.offer(plain),false);assert.equal(requestStatus(plain,phone),'aceita');
   const uncaptioned={...plain,key:{...plain.key,id:'other'},message:{imageMessage:{mimetype:'image/jpeg'}}};
-  assert.equal(collector.offer(uncaptioned),false);assert.notEqual(requestStatus(uncaptioned,phone),'aceita');
+  assert.equal(collector.offer(uncaptioned),false);assert.equal(requestStatus(uncaptioned,phone),'aceita');
   const nested=image('wrapped','album','!f');
   assert.equal(collector.offer({key:nested.key,message:{messageContextInfo:nested.message!.messageContextInfo,associatedChildMessage:{message:{imageMessage:nested.message!.imageMessage}}}}),true);
   assert.equal(queue.pending,1);collector.close();collector.close();clock.advance(30_000);await queue.idle;
@@ -182,4 +182,35 @@ test('fila serial continua após falha e cancelamento/liberação duplicados nã
   first.submit(async()=>{order.push(1);throw new Error('failure');});first.submit(async()=>assert.fail());first.cancel();
   second.submit(async()=>{order.push(2);});await q.idle;
   assert.deepEqual(order,[1,2]);assert.equal(errors,1);assert.equal(q.pending,0);
+});
+
+test('avisa coleta e fila antes de liberar trabalho anterior, sem repetir aviso por foto', async () => {
+  const queue = new JobQueue();
+  let release!: () => void;
+  queue.reserve()!.submit(() => new Promise<void>(resolve => { release = resolve; }));
+  await Promise.resolve();
+  const events: string[] = [];
+  const clock = new FakeClock();
+  const collector = new PhotoAlbumCollector([phone], queue, async batch => {
+    events.push('processar:' + batch.photos.length);
+  }, () => assert.fail(), clock, async (_m, text) => { events.push(text); });
+  collector.offer(header('notified', 2));
+  collector.offer(image('n1', 'notified', '!f'));
+  assert.match(events[0]!, /reunindo as fotos/);
+  collector.offer(image('n2', 'notified', '!f'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(events.length, 2);
+  assert.match(events[1]!, /Lote recebido: 2/);
+  assert.ok(!events.some(e => e.startsWith('processar')));
+  release(); await queue.idle;
+  assert.equal(events.at(-1), 'processar:2');
+});
+
+test('falha no aviso do álbum não impede conversão nem mantém reserva', async () => {
+  const queue = new JobQueue(); let processed = 0;
+  const collector = new PhotoAlbumCollector([phone], queue, async () => { processed++; },
+    () => assert.fail(), new FakeClock(), async () => { throw new Error('offline'); });
+  collector.offer(header('offline', 1)); collector.offer(image('n', 'offline', '!f'));
+  await queue.idle;
+  assert.equal(processed, 1); assert.equal(queue.pending, 0);
 });

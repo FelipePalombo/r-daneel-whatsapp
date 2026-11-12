@@ -31,7 +31,7 @@ test('autoriza somente dono, imagem direta e comando; ignora grupos e mensagens 
   assert.equal(stickerRequest(message, '5511888888888'), false);
   assert.equal(stickerRequest({ ...message, key: { ...message.key, remoteJid: 'group@g.us' } }, phone), false);
   assert.equal(stickerRequest({ ...message, key: { ...message.key, fromMe: true } }, phone), false);
-  assert.equal(stickerRequest({ ...message, message: { imageMessage: { caption: 'foto' } } }, phone), false);
+  assert.equal(stickerRequest({ ...message, message: { imageMessage: { caption: 'foto' } } }, phone), true);
   assert.equal(stickerRequest({ ...message, key: { ...message.key, remoteJid: '123@lid', remoteJidAlt: `${phone}@s.whatsapp.net` } }, phone), true);
   assert.equal(stickerRequest({ ...message, key: { ...message.key, remoteJid: '123@lid' } }, phone), false);
 });

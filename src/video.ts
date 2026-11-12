@@ -1,5 +1,5 @@
 import { downloadCobalt } from './cobalt.js';
-import { downloadSnapinsta } from './snapinsta.js';
+import { downloadSnapinsta, InstagramPhotoAvailable } from './snapinsta.js';
 import { downloadTwitter } from './twitter-download.js';
 import { downloadYoutube } from './youtube-download.js';
 import { downloadYoutubeDirect, youtubeMediaUsage, YoutubeSizeError, type YoutubeRunner } from './youtube-direct.js';
@@ -174,7 +174,7 @@ export async function withVideo(url: string, send: (path: string) => Promise<voi
         await Promise.all(['video.mp4', 'video.mp4.part', 'video.mp4.ytdl'].map(name => rm(join(directory, name), { force: true })));
         console.log('Download principal falhou; tentando contingência externa.');
         try { await external(canonical, directory); recovered = true; }
-        catch { /* Não registrar resposta, cookies ou URLs do serviço externo. */ }
+        catch (error) { if (error instanceof InstagramPhotoAvailable && platform === 'instagram') throw error; /* Não registrar resposta, cookies ou URLs do serviço externo. */ }
       }
       if (!recovered) throw rateLimit ?? error;
     }

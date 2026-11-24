@@ -16,6 +16,7 @@ import { PhotoAlbumCollector, sendPhotoBatch } from './photo-batch.js';
 import { loadAllowedNumbers } from './access.js';
 import { shouldOptimize, stickerOptions } from './sticker-options.js';
 import { SoundChoices } from './sound-choices.js';
+import { installSoundDiagnostic, soundShape } from './sound-diagnostic.js';
 import { soundEnabledFor } from './sound-gate.js';
 import { inspectSoundSource, extractStickerAudio, sendExperimentalSoundSticker } from './sound-sticker.js';
 import type { WAMessage } from '@whiskeysockets/baileys';
@@ -37,12 +38,14 @@ let socket: ReturnType<typeof makeWASocket>;
 const jobs = new JobQueue(3, () => console.error('Falha no processamento.'));
 const seen = new Map<string, number>();
 let lastRequest = 0;
+const soundDiagnostics = process.env.SOUND_STICKER_DIAGNOSTIC === 'true';
+if (soundDiagnostics) installSoundDiagnostic();
 const soundChoices = new SoundChoices(3);
 const soundExperimental = process.env.SOUND_STICKER_EXPERIMENTAL === 'true';
-// O teste fica limitado a um único telefone previamente configurado.
+// O diagnóstico temporário, quando ativado, permanece restrito a um telefone.
 const soundTestPhone = process.env.SOUND_STICKER_TEST_PHONE;
 function soundEnabled(message: WAMessage): boolean {
-  return soundEnabledFor(message, soundExperimental, soundTestPhone);
+  return soundEnabledFor(message, soundExperimental, allowedNumbers);
 }
 let outstandingChoices = 0;
 const choiceTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -90,7 +93,7 @@ async function convertVideoSticker(input: Buffer, linked: boolean, original: WAM
   const text = messageText(original);
   const options = stickerOptions(text);
   let sound = wantsSound && soundEnabled(original);
-  if (wantsSound && !soundEnabled(original)) await socket.sendMessage(jid, { text:'O envio com som ainda é experimental e está desativado. Vou criar a figurinha sem som.' });
+  if (wantsSound && !soundEnabled(original)) await socket.sendMessage(jid, { text:'O envio com som está desativado. Vou criar a figurinha sem som.' });
   await socket.sendMessage(jid, { text:'Vou preparar a figurinha animada. Isso pode levar alguns minutos.' });
   const profile = stickerProfile(text);
   const converted = linked
@@ -102,7 +105,8 @@ async function convertVideoSticker(input: Buffer, linked: boolean, original: WAM
   if (sound) {
     try {
       const audio = await extractStickerAudio(input, converted.sticker, playback.sticker);
-      await sendExperimentalSoundSticker(socket, jid, original, playback.sticker, audio, validateAnimatedSticker(playback.sticker).durationMs);
+      await sendExperimentalSoundSticker(socket, jid, original, playback.sticker, audio, validateAnimatedSticker(playback.sticker).durationMs,
+        !!(soundDiagnostics && soundTestPhone && !authorizationStatus(original, soundTestPhone.replace(/\D/g, ''))));
       return;
     } catch {
       sound = false;
@@ -178,6 +182,10 @@ function connect() {
       if (message.key.remoteJid?.endsWith('@lid') && !message.key.remoteJidAlt && !message.key.fromMe) {
         const mapped = await current.signalRepository.lidMapping.getPNForLID(message.key.remoteJid);
         if (mapped) message.key.remoteJidAlt = mapped;
+      }
+      if (soundDiagnostics && soundTestPhone && soundEnabled(message) && !authorizationStatus(message, soundTestPhone.replace(/\D/g, ''))) {
+        const shape = soundShape(message.message);
+        if (shape) console.log('Diagnóstico de figurinha sonora:', JSON.stringify(shape));
       }
       const status = requestStatus(message, allowedNumbers);
       if (!message.key.fromMe) console.log(`Recebimento: ${status}.`);

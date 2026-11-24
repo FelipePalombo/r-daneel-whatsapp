@@ -283,14 +283,13 @@ usar cookies pessoais, resolver CAPTCHA ou rotear YouTube para Instagram/Twitter
 Reaproveitar figurinha dos primeiros 10s, quadrada, até 500.000 bytes, sem áudio.
 Sem segunda sessão WhatsApp ou mensagens reais em testes; push/deploy só autorizados.
 
-## Figurinhas com som — experimental local
+## Figurinhas com som
 
-O recurso permanece desativado por padrão (`SOUND_STICKER_EXPERIMENTAL=false`)
-porque a reprodução ainda não foi confirmada em WhatsApp/iPhone. Em testes
-isolados, preparar áudio Opus e figurinha separadamente e incluí-lo no campo 26
-experimental de `StickerMessage`; não substituir o Baileys nem abrir outra
-sessão WhatsApp. O teste também exige `SOUND_STICKER_TEST_PHONE` de um telefone autorizado e
-fica restrito a ele. Com a opção ativa, perguntas aguardam 15 segundos fora da fila;
-limitar pendências e manter autorização, citações e limpeza. `!normal` preserva
-a velocidade, `!otimizar` permite aceleração e `!qualidade` prioriza nitidez sem
-acelerar. Não afirmar compatibilidade real antes do teste controlado autorizado.
+Com `SOUND_STICKER_EXPERIMENTAL=true`, figurinhas com som estão disponíveis para
+os números já autorizados; Felipe confirmou a reprodução no WhatsApp em 24/11/2026.
+As perguntas aguardam 15 segundos fora da fila. `!normal` preserva a velocidade,
+`!otimizar` permite aceleração e `!qualidade` prioriza nitidez sem acelerar.
+O protocolo é baseado em engenharia reversa; manter o envelope de áudio e o
+sidecar de verificação, sem substituir a biblioteca nem abrir outra sessão.
+O diagnóstico opcional registra somente campos estruturais e exige um telefone
+específico em `SOUND_STICKER_TEST_PHONE`; manter desativado fora de testes.

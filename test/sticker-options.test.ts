@@ -21,10 +21,15 @@ test('aceita opção de áudio em vídeo e mantém autorização', () => {
   assert.equal(requestStatus({key,message:{videoMessage:{caption:'!som'}}},'5511888888888'), 'remetente não autorizado');
 });
 
- test('o teste de som é exclusivo do número configurado e autorizado', () => {
-  const message={key:{id:'1',remoteJid:'5511999999999@s.whatsapp.net'}};
-  assert.equal(soundEnabledFor(message,true,'+55 11 99999-9999'),true);
-  assert.equal(soundEnabledFor(message,false,'5511999999999'),false);
-  assert.equal(soundEnabledFor(message,true,undefined),false);
-  assert.equal(soundEnabledFor(message,true,'5511888888888'),false);
+test('o som segue a lista de números autorizados', () => {
+  const allowed=['5511999999999','5511888888888'];
+  for (const phone of allowed) {
+    const message={key:{id:'1',remoteJid:`${phone}@s.whatsapp.net`}};
+    assert.equal(soundEnabledFor(message,true,allowed),true);
+    assert.equal(soundEnabledFor(message,false,allowed),false);
+  }
+  const blocked={key:{id:'2',remoteJid:'5511777777777@s.whatsapp.net'}};
+  assert.equal(soundEnabledFor(blocked,true,allowed),false);
+  assert.equal(soundEnabledFor({key:{id:'3',remoteJid:'123@g.us'}},true,allowed),false);
+  assert.equal(soundEnabledFor({key:{id:'4',remoteJid:`${allowed[0]}@s.whatsapp.net`,fromMe:true}},true,allowed),false);
 });

@@ -5,7 +5,7 @@ Envie uma foto para receber uma figurinha. Também aceito álbuns de até 10 fot
 
 🎞️ *Vídeos e GIFs*
 Envie um vídeo ou GIF para receber uma figurinha animada. Até 10 MiB. Se passar de 10 segundos, uso os primeiros 10 e aviso.
-O som é experimental e depende de ativação; quando disponível, vídeos com áudio geram uma pergunta por 15 segundos. Use !som para solicitar diretamente. Para escolher o estilo, use a legenda !f fluida ou !f nitida. Sem legenda, uso o perfil equilibrado. Use !normal para manter a velocidade, !otimizar para permitir aceleração ou !qualidade para priorizar nitidez sem acelerar.
+Vídeos com áudio geram uma pergunta por 15 segundos para escolher se a figurinha terá som. Use !som para solicitar diretamente. Para escolher o estilo, use a legenda !f fluida ou !f nitida. Sem legenda, uso o perfil equilibrado. Use !normal para manter a velocidade, !otimizar para permitir aceleração ou !qualidade para priorizar nitidez sem acelerar.
 
 🎬 *Links de vídeo*
 Envie um link público do Instagram, Twitter/X ou YouTube Shorts para receber o vídeo (até 3 minutos e 16 MiB). Publicações de imagem do Instagram retornam a imagem e uma figurinha; em carrosséis, apenas a primeira mídia disponível.

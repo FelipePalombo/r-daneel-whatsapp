@@ -1,3 +1,4 @@
+import { stickerOptions } from './sticker-options.js';
 import { directAnimationUrl } from './gif-download.js';
 import { videoUrl } from './video.js';
 import type { StickerProfile } from './animated-sticker.js';
@@ -75,20 +76,25 @@ export async function readBounded(stream: AsyncIterable<Uint8Array>, limit: numb
 }
 
 export function isStickerCommand(text?: string | null): boolean {
-  return /^!(?:figurinha|f)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(text?.trim() ?? '');
+  const options=stickerOptions(text ?? '');
+  return options.valid && ((!options.text && (!!options.mode || options.sound)) || /^!(?:figurinha|f)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(options.text));
 }
 
 /** !gf também funciona como legenda de vídeo/GIF, sem exigir link. */
 export function isAnimationStickerCommand(text?: string | null): boolean {
-  return isStickerCommand(text) || /^!(?:gifigurinha|gf)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(text?.trim() ?? '');
+  const options=stickerOptions(text ?? '');
+  return options.valid && (isStickerCommand(text) || /^!(?:gifigurinha|gf)(?:\s+(?:fluida|nitida|nítida|equilibrada))?$/i.test(options.text));
 }
 
 export function stickerProfile(text: string): StickerProfile {
-  const value = text.trim().split(/\s+/)[1]?.toLowerCase();
+  const options=stickerOptions(text);
+  if(options.mode==='qualidade') return 'nitida';
+  const value = options.text.trim().split(/\s+/)[1]?.toLowerCase();
   return value === 'fluida' ? 'fluida' : value === 'nitida' || value === 'nítida' ? 'nitida' : 'equilibrada';
 }
 export type VideoCommand = { url: string; sticker: boolean; profile?: StickerProfile };
 export function parseVideoCommand(text: string): VideoCommand | undefined {
+  const options=stickerOptions(text); if(!options.valid)return; text=options.text;
   const combined = /^(?:!f(?:igurinha)?\s+(https:\/\/\S+)|(https:\/\/\S+)\s+!f(?:igurinha)?)$/i.exec(text.trim());
   if (combined) { const url = videoUrl(combined[1] ?? combined[2]!); if (url) return {url, sticker:true}; }
   const match = /^!(video|v|vfigurinha|vf)\s+(.+)$/is.exec(text.trim());
@@ -97,7 +103,7 @@ export function parseVideoCommand(text: string): VideoCommand | undefined {
   const profileMatch = sticker ? /^(fluida|nitida|nítida|equilibrada)\s+(\S+)$/i.exec(args) : null;
   const url = videoUrl(profileMatch ? profileMatch[2]! : args);
   if (!url) return;
-  return profileMatch ? {url, sticker, profile: stickerProfile('!f '+profileMatch[1])} : {url, sticker};
+  return profileMatch || (sticker && options.mode === 'qualidade') ? {url, sticker, profile: stickerProfile(profileMatch ? '!f '+profileMatch[1]+' '+(options.mode === 'qualidade' ? '!qualidade' : '') : '!qualidade')} : {url, sticker};
 }
 
 export function messageText(m: WAMessage): string {
@@ -110,6 +116,7 @@ export function requestedVideo(m: WAMessage): VideoCommand | undefined {
   return parseVideoCommand(messageText(m));
 }
 export function parseGifCommand(text:string): string | undefined {
+  const options=stickerOptions(text); if(!options.valid)return; text=options.text;
   const match=/^!(?:gifigurinha|gf)\s+(?:(?:fluida|nitida|nítida|equilibrada)\s+)?(\S+)$/i.exec(text.trim());
   if (match) return directAnimationUrl(match[1]!)?.href;
   if (videoUrl(text.trim())) return;

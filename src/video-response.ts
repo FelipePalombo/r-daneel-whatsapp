@@ -12,15 +12,17 @@ type Sender = {
 };
 /** Falhas após envio do vídeo não acionam novo download nem são descritas como falha de download. */
 export async function sendVideoResponse(request: VideoCommand, send: Sender,
-  download = withVideo, convert = createLinkedVideoSticker): Promise<void> {
+  download = withVideo, convert = createLinkedVideoSticker, optimize = true,
+  handleSticker?: (path: string) => Promise<void>): Promise<void> {
   let sending = false;
   try { await download(request.url, async path => {
     sending = true;
     await send.video(path, request.url);
     if (!request.sticker) return;
     try {
+      if (handleSticker) { await handleSticker(path); return; }
       await send.text('Agora vou criar a figurinha animada. Isso pode levar alguns minutos.').catch(() => {});
-      const result = await convert(path, request.profile);
+      const result = await convert(path, request.profile, optimize);
       if (result.trimmed) await send.text('Para a figurinha, usei os primeiros 10 segundos do vídeo.');
       if (result.accelerated) await send.text('Acelerei a figurinha para deixar a animação mais fluida.').catch(() => {});
       await send.sticker(result.sticker);

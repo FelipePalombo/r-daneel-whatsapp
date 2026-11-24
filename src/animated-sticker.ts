@@ -101,7 +101,7 @@ export async function createDirectAnimatedSticker(input: Buffer, profile: Sticke
 }
 
 /** Prepara somente mídia local já baixada; o limite de downloads permanece separado. */
-export async function createLinkedVideoSticker(source: string, profile: StickerProfile = 'equilibrada'): Promise<{ sticker: Buffer; trimmed: boolean; accelerated?: boolean }> {
+export async function createLinkedVideoSticker(source: string, profile: StickerProfile = 'equilibrada', optimize = true): Promise<{ sticker: Buffer; trimmed: boolean; accelerated?: boolean }> {
   const probe = JSON.parse(await command('ffprobe', ['-v', 'error', '-protocol_whitelist', 'file,pipe',
     '-show_entries', 'format=duration:stream=codec_type,width,height', '-of', 'json', source], 10_000));
   const video = probe.streams?.find((stream: { codec_type: string }) => stream.codec_type === 'video');
@@ -116,7 +116,8 @@ export async function createLinkedVideoSticker(source: string, profile: StickerP
       '-an', '-sn', '-dn', '-t', '10', '-vf', "scale='min(512,iw)':-2",
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-maxrate', '2M', '-bufsize', '2M',
       '-pix_fmt', 'yuv420p', '-threads', '1', '-map_metadata', '-1', clip], 60_000);
-    const playback = accelerateSticker(await createAnimatedSticker(await readFile(clip), profile));
+    const encoded = await createAnimatedSticker(await readFile(clip), profile);
+    const playback = optimize ? accelerateSticker(encoded) : { sticker: encoded, accelerated: false };
     return { ...playback, trimmed: duration > MAX_ANIMATION_SECONDS };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

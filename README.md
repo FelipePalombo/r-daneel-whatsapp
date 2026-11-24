@@ -419,10 +419,17 @@ Pedidos aceitos recebem confirmação antes de esperar na fila e aviso ao inicia
 
 Figurinhas animadas equilibram fluidez e detalhes conforme o perfil escolhido; o resultado continua limitado a 500.000 bytes.
 
-Figurinhas animadas usam `img2webp` e três perfis: `!f` (equilibrada), `!f fluida` e `!f nitida` como legenda de vídeo/GIF. Para links use `!gf fluida <link>` ou `!vf nitida <link>`; todos aceitam também `equilibrada` e `nítida`. Os perfis são prioridades, sujeitos ao limite de 500.000 bytes e ao tempo disponível. Cada conversão tem orçamento total de 180 segundos. Fotos estáticas ignoram o perfil.
+Figurinhas animadas usam `img2webp` e três perfis: `!f` (equilibrada), `!f fluida` e `!f nitida` como legenda de vídeo/GIF. Para links use `!gf fluida <link>` ou `!vf nitida <link>`; todos aceitam também `equilibrada` e `nítida`. Os perfis são prioridades, sujeitos ao limite de 500.000 bytes e ao tempo disponível. Cada conversão tem orçamento total de 180 segundos. Fotos estáticas ignoram o perfil. Para animações, `!normal` mantém a velocidade; `!otimizar` permite acelerar quando necessário; `!qualidade` usa o perfil nítido sem acelerar. As opções podem acompanhar a legenda ou os comandos de link.
 
 Fotos, vídeos e GIFs recebidos automaticamente são convertidos em figurinhas; álbuns associados usam lote e fotos avulsas entram na fila individualmente. Links públicos de Instagram/X/Shorts retornam vídeo; `!f <link>` ou `<link> !f` adiciona uma figurinha. Links diretos de GIF/WebP animado também são convertidos automaticamente. Animações abaixo de 10 fps podem ter sua reprodução acelerada em até 1,5×, sem eliminar quadros, com aviso.
 
 Publicações públicas de imagem do Instagram em `/p/` também são aceitas: caso as tentativas de vídeo não encontrem vídeo e a contingência Snapinsta retorne uma imagem JPEG, PNG ou WebP estático de até 10 MiB, o bot envia a imagem e em seguida uma figurinha. Em publicações com várias mídias retorna apenas a primeira mídia disponível; a contingência envia a URL pública à Snapinsta e depende de sua disponibilidade. Vídeos continuam seguindo o fluxo de vídeo; capas de Reels não são convertidas como foto.
 
 Para Instagram, se a mídia obtida pela Snapinsta ultrapassar 16 MiB, o bot pode baixá-la uma vez (limite de entrada 60 MiB) e compactá-la localmente com FFmpeg, avisando antes da conversão. A entrada precisa ser um vídeo válido de até 3 minutos; o arquivo final continua limitado a 16 MiB e é verificado quanto a duração e áudio. A operação possui timeout e remove os temporários. Para respeitar a capacidade da VM, a compactação pode demorar vários minutos e falhar se ultrapassar o tempo permitido.
+
+
+### Figurinhas com som (experimental)
+
+Por padrão, `SOUND_STICKER_EXPERIMENTAL=false`: vídeos continuam gerando figurinhas silenciosas, e `!som` informa a indisponibilidade. Com `SOUND_STICKER_EXPERIMENTAL=true` e `SOUND_STICKER_TEST_PHONE` configurado com um telefone autorizado (somente dígitos), vídeos desse telefone com áudio recebidos diretamente ou em `!vf` perguntam por 15 segundos se devem incluir som; `!som` junto do vídeo ou comando pula a pergunta. A resposta pode citar a pergunta para desambiguar. Sem resposta, a figurinha é silenciosa. O processamento aguarda fora da fila e limita as perguntas. O áudio Opus usa os primeiros 10 segundos e acompanha a aceleração quando `!otimizar` é escolhido. `!normal` mantém a velocidade; `!qualidade` prioriza nitidez sem acelerar.
+
+O campo de áudio é baseado em engenharia reversa e **a reprodução ainda não foi confirmada no WhatsApp/iPhone**. Não ativar em produção antes de um teste controlado. Uma falha na preparação/envio tenta retornar uma figurinha silenciosa.

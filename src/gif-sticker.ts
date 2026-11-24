@@ -9,7 +9,7 @@ import { downloadAnimation } from './gif-download.js';
 
 export const MAX_GIF_FRAMES=300;
 export const MAX_GIF_PIXELS=50_000_000;
-export async function createGifSticker(input: Buffer, profile: StickerProfile = 'equilibrada'): Promise<{sticker:Buffer;trimmed:boolean;accelerated?:boolean}> {
+export async function createGifSticker(input: Buffer, profile: StickerProfile = 'equilibrada', optimize = true): Promise<{sticker:Buffer;trimmed:boolean;accelerated?:boolean}> {
   if(!input.length || input.length>MAX_ANIMATED_INPUT_BYTES) throw new AnimatedStickerError('Envie uma animação de até 10 MiB.');
   const gif=/^GIF8[79]a$/.test(input.toString('ascii',0,6));
   const webp=input.toString('ascii',0,4)==='RIFF' && input.toString('ascii',8,12)==='WEBP';
@@ -59,7 +59,7 @@ export async function createGifSticker(input: Buffer, profile: StickerProfile = 
     const source=join(directory,'frames.ffconcat');
     await writeFile(source,'ffconcat version 1.0\n'+lines.join('\n')+'\n',{mode:0o600});
     const sticker=await encodeAnimatedSource(source,duration,join(directory,'sticker.webp'),['-f','concat','-safe','1'], frames * 1000 / total, profile);
-    return {...accelerateSticker(sticker),trimmed:total>10000};
+    return {...(optimize ? accelerateSticker(sticker) : {sticker, accelerated:false}),trimmed:total>10000};
   } catch(error) {
     if(error instanceof AnimatedStickerError) throw error;
     throw new AnimatedStickerError('Não consegui converter essa animação. O arquivo pode estar inválido ou exceder os limites de processamento.', {cause:error});
@@ -67,9 +67,9 @@ export async function createGifSticker(input: Buffer, profile: StickerProfile = 
 }
 
 export async function sendGifResponse(url:string, send:{sticker:(data:Buffer)=>Promise<void>;text:(text:string)=>Promise<void>},
-  download=downloadAnimation,convert=createGifSticker, profile: StickerProfile = 'equilibrada'):Promise<void> {
+  download=downloadAnimation,convert=createGifSticker, profile: StickerProfile = 'equilibrada', optimize = true):Promise<void> {
   await send.text('Vou baixar a animação e preparar a figurinha. Isso pode levar alguns minutos.');
-  const result=await convert(await download(url), profile);
+  const result=await convert(await download(url), profile, optimize);
   if(result.trimmed)await send.text('Para a figurinha, usei os primeiros 10 segundos da animação.');
   if(result.accelerated)await send.text('Acelerei a figurinha para deixar a animação mais fluida.').catch(()=>{});
   await send.sticker(result.sticker);

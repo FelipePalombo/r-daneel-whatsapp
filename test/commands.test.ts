@@ -80,3 +80,14 @@ test('falha no aviso de criação não impede conversão nem repete download', a
   async () => { events.push('convert'); return { sticker: Buffer.from('webp'), trimmed: false }; });
   assert.equal(downloads, 1); assert.deepEqual(events, ['video', 'notice', 'convert', 'sticker']);
 });
+
+test('o pedido combinado pode aguardar áudio sem repetir o download', async () => {
+  const events: string[]=[];
+  await sendVideoResponse({url,sticker:true}, {
+    video:async()=>{events.push('video');}, sticker:async()=>{events.push('sticker');},
+    text:async()=>{events.push('text');},
+  }, async (_url,send)=>{events.push('download'); await send('/tmp/fixture.mp4');},
+  async()=>{throw new Error('o caminho antigo não deve ser executado');}, true,
+  async path=>{assert.equal(path,'/tmp/fixture.mp4');events.push('choice');});
+  assert.deepEqual(events,['download','video','choice']);
+});

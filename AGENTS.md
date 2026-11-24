@@ -282,3 +282,15 @@ googlevideo.com, DNS fixado e redirects validados. Não descobrir novos provedor
 usar cookies pessoais, resolver CAPTCHA ou rotear YouTube para Instagram/Twitter.
 Reaproveitar figurinha dos primeiros 10s, quadrada, até 500.000 bytes, sem áudio.
 Sem segunda sessão WhatsApp ou mensagens reais em testes; push/deploy só autorizados.
+
+## Figurinhas com som — experimental local
+
+O recurso permanece desativado por padrão (`SOUND_STICKER_EXPERIMENTAL=false`)
+porque a reprodução ainda não foi confirmada em WhatsApp/iPhone. Em testes
+isolados, preparar áudio Opus e figurinha separadamente e incluí-lo no campo 26
+experimental de `StickerMessage`; não substituir o Baileys nem abrir outra
+sessão WhatsApp. O teste também exige `SOUND_STICKER_TEST_PHONE` de um telefone autorizado e
+fica restrito a ele. Com a opção ativa, perguntas aguardam 15 segundos fora da fila;
+limitar pendências e manter autorização, citações e limpeza. `!normal` preserva
+a velocidade, `!otimizar` permite aceleração e `!qualidade` prioriza nitidez sem
+acelerar. Não afirmar compatibilidade real antes do teste controlado autorizado.

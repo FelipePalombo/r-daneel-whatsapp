@@ -1,10 +1,12 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import makeWASocket, { DisconnectReason, downloadMediaMessage, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { createDirectAnimatedSticker, AnimatedStickerError, accelerateSticker } from './animated-sticker.js';
+import { createDirectAnimatedSticker, createLinkedVideoSticker, validateAnimatedSticker, AnimatedStickerError, accelerateSticker } from './animated-sticker.js';
 import { createSticker, MAX_INPUT_BYTES } from './sticker.js';
-import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply, stickerProfile } from './request.js';
+import { readBounded, requestStatus, requestedVideo, messageText, parseGifCommand, invalidCommandReply, stickerProfile, authorizationStatus, messageContent } from './request.js';
 import { videoFailureReply } from './video.js';
 import { sendVideoResponse } from './video-response.js';
 import { HELP_TEXT } from './help.js';
@@ -12,6 +14,11 @@ import { sendGifResponse } from './gif-sticker.js';
 import { JobQueue } from './job-queue.js';
 import { PhotoAlbumCollector, sendPhotoBatch } from './photo-batch.js';
 import { loadAllowedNumbers } from './access.js';
+import { shouldOptimize, stickerOptions } from './sticker-options.js';
+import { SoundChoices } from './sound-choices.js';
+import { soundEnabledFor } from './sound-gate.js';
+import { inspectSoundSource, extractStickerAudio, sendExperimentalSoundSticker } from './sound-sticker.js';
+import type { WAMessage } from '@whiskeysockets/baileys';
 
 process.umask(0o077);
 const allowedNumbers = await loadAllowedNumbers();
@@ -30,6 +37,15 @@ let socket: ReturnType<typeof makeWASocket>;
 const jobs = new JobQueue(3, () => console.error('Falha no processamento.'));
 const seen = new Map<string, number>();
 let lastRequest = 0;
+const soundChoices = new SoundChoices(3);
+const soundExperimental = process.env.SOUND_STICKER_EXPERIMENTAL === 'true';
+// O teste fica limitado a um único telefone previamente configurado.
+const soundTestPhone = process.env.SOUND_STICKER_TEST_PHONE;
+function soundEnabled(message: WAMessage): boolean {
+  return soundEnabledFor(message, soundExperimental, soundTestPhone);
+}
+let outstandingChoices = 0;
+const choiceTimers = new Set<ReturnType<typeof setTimeout>>();
 
 function reportBusy(message: import('@whiskeysockets/baileys').WAMessage) {
   const jid = message.key.remoteJid!;
@@ -48,6 +64,86 @@ const albums = new PhotoAlbumCollector(allowedNumbers, jobs, async batch => {
     return createSticker(await readBounded(stream, MAX_INPUT_BYTES));
   });
 }, reportBusy, undefined, async (message, text) => { await socket.sendMessage(message.key.remoteJid!, { text }, { quoted: message }); });
+
+
+/** Retoma decisões sem segurar a fila durante os 15 segundos de espera. */
+function scheduleChoice(work: () => Promise<void>): void {
+  const attempt = () => {
+    if (stopping) { outstandingChoices--; return; }
+    const reservation = jobs.reserve();
+    if (reservation) { outstandingChoices--; reservation.submit(work); return; }
+    const timer = setTimeout(() => { choiceTimers.delete(timer); attempt(); }, 500);
+    choiceTimers.add(timer);
+  };
+  attempt();
+}
+async function withLinkedInput<T>(input: Buffer, action: (path: string) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), 'daneel-linked-sound-'));
+  try {
+    const path = join(dir, 'video.mp4');
+    await writeFile(path, input, { mode: 0o600 });
+    return await action(path);
+  } finally { await rm(dir, { recursive:true, force:true }); }
+}
+async function convertVideoSticker(input: Buffer, linked: boolean, original: WAMessage, wantsSound: boolean): Promise<void> {
+  const jid = original.key.remoteJid!;
+  const text = messageText(original);
+  const options = stickerOptions(text);
+  let sound = wantsSound && soundEnabled(original);
+  if (wantsSound && !soundEnabled(original)) await socket.sendMessage(jid, { text:'O envio com som ainda é experimental e está desativado. Vou criar a figurinha sem som.' });
+  await socket.sendMessage(jid, { text:'Vou preparar a figurinha animada. Isso pode levar alguns minutos.' });
+  const profile = stickerProfile(text);
+  const converted = linked
+    ? await withLinkedInput(input, path => createLinkedVideoSticker(path, profile, false))
+    : await createDirectAnimatedSticker(input, profile);
+  if (converted.trimmed) await socket.sendMessage(jid, { text:'Para a figurinha, usei os primeiros 10 segundos do vídeo ou GIF.' }).catch(() => {});
+  const playback = shouldOptimize(options.mode, sound) ? accelerateSticker(converted.sticker) : {sticker:converted.sticker,accelerated:false};
+  if (playback.accelerated) await socket.sendMessage(jid, { text:'Acelerei a figurinha para deixar a animação mais fluida.' }).catch(() => {});
+  if (sound) {
+    try {
+      const audio = await extractStickerAudio(input, converted.sticker, playback.sticker);
+      await sendExperimentalSoundSticker(socket, jid, original, playback.sticker, audio, validateAnimatedSticker(playback.sticker).durationMs);
+      return;
+    } catch {
+      sound = false;
+      await socket.sendMessage(jid, { text:'Não consegui enviar a figurinha com som. Vou tentar enviar uma versão sem som.' }).catch(() => {});
+    }
+  }
+  await socket.sendMessage(jid, { sticker:playback.sticker, isAnimated:true, width:512, height:512 }, { quoted:original });
+}
+async function prepareVideoSticker(input: Buffer, linked: boolean, original: WAMessage): Promise<void> {
+  const jid = original.key.remoteJid!;
+  const options = stickerOptions(messageText(original));
+  const info = await inspectSoundSource(input);
+  if (!info.hasAudio) {
+    if (options.sound) await socket.sendMessage(jid, { text:'Esse vídeo ou GIF não tem áudio. Vou criar a figurinha sem som.' });
+    await convertVideoSticker(input, linked, original, false);
+    return;
+  }
+  if (options.sound) { await convertVideoSticker(input, linked, original, true); return; }
+  if (!soundEnabled(original)) { await convertVideoSticker(input, linked, original, false); return; }
+  if (outstandingChoices >= 3) {
+    await socket.sendMessage(jid, { text:'Há muitas perguntas de áudio aguardando resposta. Reenvie este pedido em instantes.' }, { quoted:original });
+    return;
+  }
+  outstandingChoices++;
+  let prompt: WAMessage | undefined;
+  try {
+    prompt = await socket.sendMessage(jid, { text:'Quer a figurinha com som? Responda !som; qualquer outra resposta envia sem som. Aguardo 15 segundos.' }, { quoted:original });
+  } catch { outstandingChoices--; await convertVideoSticker(input, linked, original, false); return; }
+  if (!prompt?.key.id || !soundChoices.add(jid, prompt.key.id, (sound, expired) => {
+    const notify = expired ? 'Tempo esgotado. Vou criar a figurinha sem som.' : 'Resposta recebida.';
+    void socket.sendMessage(jid, { text:`${notify} Dica: envie !som junto do vídeo ou do comando para pular a pergunta.` }).catch(() => {});
+    scheduleChoice(async () => {
+      try { await convertVideoSticker(input, linked, original, sound); }
+      catch { await socket.sendMessage(jid, { text:'Não consegui criar essa figurinha. Tente novamente com outro vídeo ou GIF.' }).catch(() => {}); }
+    });
+  })) {
+    outstandingChoices--;
+    await socket.sendMessage(jid, { text:'Não consegui aguardar sua resposta. Vou criar a figurinha sem som.' });
+    await convertVideoSticker(input, linked, original, false);
+  }
+}
 
 function connect() {
   const current = makeWASocket({ auth: state, logger, syncFullHistory: false, markOnlineOnConnect: false });
@@ -89,6 +185,17 @@ function connect() {
       for (const [key, timestamp] of seen) if (now - timestamp > 600_000) seen.delete(key);
       const key = `${message.key.remoteJid}:${message.key.id}`;
       if (seen.has(key)) { console.log('Pedido ignorado: repetido.'); continue; }
+      const content = messageContent(message);
+      const replyText = content?.conversation ?? content?.extendedTextMessage?.text;
+      const isNewRequest = !!replyText && (requestedVideo(message) !== undefined || parseGifCommand(replyText) !== undefined);
+      if (replyText && !isNewRequest && !authorizationStatus(message, allowedNumbers)) {
+        const choice = soundChoices.respond(message.key.remoteJid!, replyText, content?.extendedTextMessage?.contextInfo?.stanzaId ?? undefined);
+        if (choice !== 'unmatched') {
+          seen.set(key, now);
+          if (choice === 'ambiguous') await current.sendMessage(message.key.remoteJid!, { text:'Há mais de uma pergunta pendente. Responda citando a pergunta do vídeo desejado.' }, { quoted:message }).catch(() => {});
+          continue;
+        }
+      }
       if (albums.offer(message)) { seen.set(key, now); continue; }
       if (!['aceita', 'animação aceita', 'vídeo aceito', 'comando de vídeo inválido', 'gif por link aceito', 'comando de gif inválido', 'ajuda aceita', 'comando em formato inválido', 'comando desconhecido'].includes(status)) continue;
       // Fotos avulsas com comando próprio podem chegar juntas sem o intervalo de 2s.
@@ -122,10 +229,11 @@ function connect() {
         try {
           const gifUrl=parseGifCommand(messageText(message));
           if (gifUrl) {
+            if (stickerOptions(messageText(message)).sound) await current.sendMessage(jid, { text:'GIFs não contêm áudio. Vou criar a figurinha sem som.' });
             await sendGifResponse(gifUrl, {
               sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated:true, width:512, height:512 }, { quoted:message }); },
               text: async text => { await current.sendMessage(jid, { text }); },
-            }, undefined, undefined, stickerProfile(messageText(message)));
+            }, undefined, undefined, stickerProfile(messageText(message)), shouldOptimize(stickerOptions(messageText(message)).mode, false));
             console.log('Figurinha de link enviada.');
             return;
           }
@@ -136,22 +244,25 @@ function connect() {
               image: async (image, mimetype) => { await current.sendMessage(jid, { image, mimetype }, { quoted: message }); },
               sticker: async sticker => { await current.sendMessage(jid, { sticker, isAnimated: true, width: 512, height: 512 }, { quoted: message }); },
               text: async text => { await current.sendMessage(jid, { text }); },
+            }, undefined, undefined, shouldOptimize(stickerOptions(messageText(message)).mode, false), async path => {
+              await current.sendMessage(jid, { text:'Vou verificar o áudio e preparar a figurinha.' }).catch(() => {});
+              const input = await readFile(path);
+              if (input.length > 16 * 1024 * 1024) throw new Error('Vídeo maior que o limite.');
+              await prepareVideoSticker(input, true, message);
             });
             console.log('Vídeo enviado.');
             return;
           }
           if (status === 'aceita') await current.sendMessage(jid, { text: 'Vou criar a figurinha desta foto.' }).catch(() => {});
-          if (status === 'animação aceita') await current.sendMessage(jid, { text: 'Vou preparar a figurinha animada. Isso pode levar alguns minutos.' });
+          if (status === 'animação aceita') await current.sendMessage(jid, { text: 'Vou verificar o vídeo para preparar a figurinha.' });
           const stream = await downloadMediaMessage(message, 'stream', { options: { signal: AbortSignal.timeout(30_000) } }, {
             logger, reuploadRequest: current.updateMediaMessage
           });
           const input = await readBounded(stream, MAX_INPUT_BYTES);
           let sticker: Buffer;
           if (status === 'animação aceita') {
-            const converted = await createDirectAnimatedSticker(input, stickerProfile(messageText(message)));
-            if (converted.trimmed) await current.sendMessage(jid, { text: 'Para a figurinha, usei os primeiros 10 segundos do vídeo ou GIF.' }).catch(() => {});
-            const result = accelerateSticker(converted.sticker); sticker = result.sticker;
-            if (result.accelerated) await current.sendMessage(jid, { text: 'Acelerei a figurinha para deixar a animação mais fluida.' }).catch(() => {});
+            await prepareVideoSticker(input, false, message);
+            return;
           } else sticker = await createSticker(input);
           await current.sendMessage(jid, { sticker, isAnimated: status === 'animação aceita', width: 512, height: 512 }, { quoted: message });
           console.log('Figurinha enviada.');
@@ -169,6 +280,9 @@ function stop(code = 0) {
   stopping = true;
   clearTimeout(timer);
   albums.close();
+  soundChoices.close();
+  for (const pending of choiceTimers) clearTimeout(pending);
+  choiceTimers.clear();
   socket?.end(undefined);
   void jobs.idle.finally(() => saveCreds()).then(() => process.exit(code), () => process.exit(1));
   setTimeout(() => process.exit(code), 5000).unref();
